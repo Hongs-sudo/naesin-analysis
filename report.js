@@ -70,7 +70,7 @@
     const killerTxt = S.killers.length ? S.killers.map(i => i[0]).join('·') + '번' : '—';
     const killerSub = S.killers.length ? `${S.killers.every(i => i[0] > S.n - 4) ? '마지막 문제들' : '고난도 문항'}, ${[...new Set(S.killers.map(i => i[1]))].join('·')}점<br>${esc(strip(S.killers[0][6]))}` : '';
     const prevTxt = S.prev ? `직전 시험(${S.prev.label})과 비교: 실력·심화 ${S.prev.top}점 → ${S.pts[3] + S.pts[4]}점` : '';
-    return `<div class="rpt" data-w="794" style="width:794px;min-height:1123px;box-sizing:border-box;padding:40px 44px 30px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:22px">
+    return `<div class="rpt" data-w="794" style="width:794px;height:1123px;overflow:hidden;box-sizing:border-box;padding:40px 44px 30px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:22px">
       <header style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid ${K.g};padding-bottom:14px">
         <div style="display:flex;flex-direction:column;gap:4px">
           <div style="font-size:12px;font-weight:700;color:${K.gold};letter-spacing:2px">수도 내신분석</div>
@@ -114,7 +114,7 @@
             ${editable(t[0], 'span', 'font-size:15px;font-weight:700')}
             ${editable(t[1], 'span', `font-size:13px;line-height:1.6;color:${K.ink2}`)}</div>`).join('')}</div>
       </section>
-      <footer style="display:flex;justify-content:space-between;font-size:11px;color:${K.mute};border-top:1px solid ${K.line};padding-top:10px">
+      <footer style="margin-top:auto;display:flex;justify-content:space-between;font-size:11px;color:${K.mute};border-top:1px solid ${K.line};padding-top:10px">
         <span>수학도서관이 실제 시험지를 문항별로 분류해 작성했습니다.</span><span style="font-weight:700;color:${K.g}">1:1 명품 맞춤 수학학원 수학도서관</span></footer>
     </div>`;
   }
@@ -172,7 +172,7 @@
     const big0 = S.bigs[0] || ['—', 0];
     const pb = S.prev && S.prev.beh;
     const maxMid = S.mids.length ? S.mids[0][1] : 1;
-    return `<div class="rpt" data-w="794" style="width:794px;min-height:1123px;box-sizing:border-box;padding:36px 40px 28px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:16px">
+    return `<div class="rpt" data-w="794" style="width:794px;height:1123px;overflow:hidden;box-sizing:border-box;padding:36px 40px 28px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:16px">
       <header style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${K.g};padding-bottom:10px">
         <div><div style="font-size:12px;font-weight:700;color:${K.gold};letter-spacing:2px">수도 상세 분석지 · 1</div>
         <div style="font-size:25px;font-weight:900;letter-spacing:-.5px">${esc(e.s)} ${e.g}학년 ${e.t}학기 ${e.x}고사 분석</div></div>${logo()}</header>
@@ -204,19 +204,19 @@
         </section>
         <section style="border:1px solid ${K.line};border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;background:#FAF8F2">
           <div style="font-size:14px;font-weight:700">고난도 문항</div>
-          ${S.it.filter(i => i[2] >= 3).map(i => `<div style="display:flex;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #ECF1EF"><b style="width:30px;color:${K.g}">${i[0]}번</b><span style="padding:0 6px;border-radius:99px;background:${DC[i[2]]};color:${DT[i[2]]};font-size:11px;font-weight:700;height:18px">${DIFF[i[2]]}</span><span style="flex:1">${esc(strip(i[7] || i[6]))}</span><span style="color:${K.mute}">${i[1]}점</span></div>`).join('')}
+          ${S.it.filter(i => i[2] >= 3).sort((x, y) => y[2] - x[2] || y[1] - x[1] || x[0] - y[0]).slice(0, 8).sort((x, y) => x[0] - y[0]).map(i => `<div style="display:flex;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #ECF1EF"><b style="width:30px;color:${K.g}">${i[0]}번</b><span style="padding:0 6px;border-radius:99px;background:${DC[i[2]]};color:${DT[i[2]]};font-size:11px;font-weight:700;height:18px">${DIFF[i[2]]}</span><span style="flex:1">${esc(strip(i[7] || i[6]))}</span><span style="color:${K.mute}">${i[1]}점</span></div>`).join('')}${S.it.filter(i => i[2] >= 3).length > 8 ? `<div style="font-size:11.5px;color:${K.mute};padding-top:4px">외 ${S.it.filter(i => i[2] >= 3).length - 8}문항 (가장 어려운 8문항만 표시)</div>` : ''}
         </section>
       </div>
-      <footer style="display:flex;justify-content:space-between;font-size:10px;color:${K.mute};border-top:1px solid ${K.line};padding-top:8px"><span>수학도서관이 실제 시험지를 문항 단위로 분류해 작성했습니다.</span><span>1 / 2</span></footer>
+      <footer style="margin-top:auto;display:flex;justify-content:space-between;font-size:10px;color:${K.mute};border-top:1px solid ${K.line};padding-top:8px"><span>수학도서관이 실제 시험지를 문항 단위로 분류해 작성했습니다.</span><span>1 / 2</span></footer>
     </div>`;
   }
   function detail2(e, S, ctx) {
-    const hist = ctx.schoolHistory(e.s);
+    const hist = ctx.schoolHistory(e.s).slice(-8);
     const maxTop = Math.max(40, ...hist.map(h => h.top));
-    const mix = ctx.sameCourse(e);
-    const common = ctx.commonTypes(e).slice(0, 8);
+    const mix = ctx.sameCourse(e).slice(0, 5);
+    const common = ctx.commonTypes(e).slice(0, 5);
     const cutRows = ['1등급', '2등급', '3등급', '4등급'].filter(g => S.cuts[g]);
-    return `<div class="rpt" data-w="794" style="width:794px;min-height:1123px;box-sizing:border-box;padding:36px 40px 28px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:16px">
+    return `<div class="rpt" data-w="794" style="width:794px;height:1123px;overflow:hidden;box-sizing:border-box;padding:36px 40px 28px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:16px">
       <header style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${K.g};padding-bottom:10px">
         <div><div style="font-size:12px;font-weight:700;color:${K.gold};letter-spacing:2px">수도 상세 분석지 · 2</div>
         <div style="font-size:25px;font-weight:900;letter-spacing:-.5px">학교 누적 · 인근 학교와 비교</div></div>${logo()}</header>
@@ -251,7 +251,7 @@
           ${S.todo.map((t, k) => `<div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;border-bottom:1px solid #ECF1EF">${editable(t[0], 'b', `font-size:13px;color:${K.g}`)}${editable(t[1], 'span', `font-size:12px;line-height:1.5;color:${K.ink2}`)}</div>`).join('')}
         </section>
       </div>
-      <footer style="display:flex;justify-content:space-between;font-size:10px;color:${K.mute};border-top:1px solid ${K.line};padding-top:8px"><span>1:1 명품 맞춤 수학학원 수학도서관</span><span>2 / 2</span></footer>
+      <footer style="margin-top:auto;display:flex;justify-content:space-between;font-size:10px;color:${K.mute};border-top:1px solid ${K.line};padding-top:8px"><span>1:1 명품 맞춤 수학학원 수학도서관</span><span>2 / 2</span></footer>
     </div>`;
   }
 
@@ -260,7 +260,10 @@
     const w = +node.dataset.w;
     const box = document.createElement('div');
     box.style.cssText = 'position:fixed;left:-10000px;top:0;pointer-events:none;';
-    box.appendChild(node.cloneNode(true));
+    const clone = node.cloneNode(true);
+    // 미리보기에서 화면에 맞추려고 줄여 둔 배율(transform)을 떼고 원래 크기로 찍는다
+    clone.style.transform = 'none'; clone.style.margin = '0';
+    box.appendChild(clone);
     box.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable'));
     document.body.appendChild(box);
     try {
@@ -294,13 +297,35 @@
   }
   async function saveImage(node, name) { saveBlob(await toBlob(node), name); return 'saved'; }
 
+  // A4 쪽: 바깥은 794×1123 고정, 안쪽 내용이 넘치면 폭을 넓혀 다시 흘린 뒤 통째로 줄여서 한 쪽에 꽉 차게 맞춘다
+  const A4_HEAD = '<div class="rpt" data-w="794" style="width:794px;height:1123px;overflow:hidden;';
+  function wrapA4(html) {
+    if (!html.startsWith(A4_HEAD)) return html;
+    return '<div class="rpt" data-w="794" data-a4="1" style="width:794px;height:1123px;overflow:hidden;background:#fff"><div class="rpt-in" style="width:794px;min-height:1123px;transform-origin:0 0;'
+      + html.slice(A4_HEAD.length) + '</div>';
+  }
+  function fit(node) {
+    if (!node || !node.dataset.a4) return;
+    const inn = node.firstElementChild;
+    let z = 1;
+    inn.style.transform = 'none'; inn.style.width = '794px'; inn.style.minHeight = '1123px';
+    for (let k = 0; k < 4; k++) {
+      const h = inn.scrollHeight;
+      if (h <= 1123 / z + 0.5) break;
+      z = Math.max(0.6, z * 1123 / h);
+      inn.style.width = (794 / z) + 'px'; inn.style.minHeight = (1123 / z) + 'px';
+    }
+    if (inn.scrollHeight > 1123 / z + 0.5) z = Math.max(0.6, 1123 / inn.scrollHeight), inn.style.width = (794 / z) + 'px', inn.style.minHeight = (1123 / z) + 'px';
+    inn.style.transform = z < 1 ? `scale(${z})` : 'none';
+  }
   window.SudoReport = {
     build(format, e, ctx) {
       const S = summarize(e, ctx);
       if (format === 'card') return [card(e, S)];
-      if (format === 'detail') return [detail1(e, S), detail2(e, S, ctx)];
-      return [simple(e, S)];
+      if (format === 'detail') return [detail1(e, S), detail2(e, S, ctx)].map(wrapA4);
+      return [simple(e, S)].map(wrapA4);
     },
+    fit,
     copyImage, shareImage, saveImage
   };
 })();

@@ -475,7 +475,9 @@ window.startApp = function (D, ctx) {
           <p class="dl">‘다음 시험 준비’ 글은 분석지 위에서 눌러 바로 고칠 수 있습니다. 고친 글은 복사·저장에 그대로 들어갑니다.</p>
         </aside>
       </div>`;
+    $$('#preview .rpt').forEach(r => window.SudoReport.fit(r));
     fitPreview();
+    $('#preview').addEventListener('input', ev => { const r = ev.target.closest('.rpt'); if (r) { window.SudoReport.fit(r); } });
     $('#outExam').onchange = ev => { OUT.id = ev.target.value; renderOutput(); };
     $$('.fmt').forEach(b => b.onclick = () => { OUT.fmt = b.dataset.fmt; renderOutput(); });
     const name = i => `${short(e.s)}중_${e.y}_${e.g}-${e.t}_${e.x}_${FMT.find(f => f[0] === OUT.fmt)[1]}${pages.length > 1 ? '_' + (i + 1) + '쪽' : ''}.png`;
