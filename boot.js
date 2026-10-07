@@ -24,7 +24,12 @@
       ${msg ? `<p class="callout">${esc(msg)}</p>` : ''}
       <button type="button" class="primary" id="login">Google로 로그인</button>`);
     document.getElementById('login').onclick = () => {
-      auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => loginScreen('로그인하지 못했습니다: ' + e.message));
+      const pv = new firebase.auth.GoogleAuthProvider();
+      // 홈 화면에 설치한 앱(특히 아이폰·아이패드)은 팝업이 막힐 수 있어 화면 전환 방식으로 한 번 더 시도
+      auth.signInWithPopup(pv).catch(e => {
+        if (/popup-blocked|operation-not-supported|web-storage-unsupported/.test(e.code || '')) return auth.signInWithRedirect(pv);
+        if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') loginScreen('로그인하지 못했습니다: ' + e.message);
+      });
     };
   }
 
@@ -128,5 +133,6 @@
     else location.reload();
   }
 
+  auth.getRedirectResult().catch(e => loginScreen('로그인하지 못했습니다: ' + e.message));
   auth.onAuthStateChanged(u => { if (u) boot(u); else { started = false; loginScreen(); } });
 })();

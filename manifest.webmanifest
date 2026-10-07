@@ -1,0 +1,16 @@
+{
+  "name": "수도 내신분석",
+  "short_name": "내신분석",
+  "description": "수학도서관 내신 기출 보관함 · 학교별 분석 · 분석지",
+  "lang": "ko",
+  "start_url": "./#archive",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F4EF",
+  "theme_color": "#0A4844",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

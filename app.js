@@ -568,6 +568,13 @@ window.startApp = function (D, ctx) {
   $('#sideNote').innerHTML = `<span id="sideCount">${D.exams.length}개 시험 · ${schools.length}개 학교</span><br>데이터 기준일 ${esc(D.built)}`
     + (ctx ? `<br>${esc(ctx.user)} <button type="button" class="linkbtn" id="logout">로그아웃</button>` : '');
   if (ctx) $('#logout').onclick = () => ctx.signOut();
+  // PC·안드로이드 크롬/엣지: '앱으로 설치' 버튼
+  function installBtn() {
+    if (!window.__bip || $('#installApp')) return;
+    $('#sideNote').insertAdjacentHTML('beforeend', '<br><button type="button" class="linkbtn" id="installApp">이 컴퓨터에 앱으로 설치</button>');
+    $('#installApp').onclick = async () => { const p = window.__bip; window.__bip = null; p.prompt(); await p.userChoice.catch(() => {}); $('#installApp').remove(); };
+  }
+  installBtn(); addEventListener('bip-ready', installBtn);
   window.addEventListener('hashchange', route);
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => {
     const m = mode(); if (m !== MODE) { MODE = m; document.body.dataset.mode = m; closeSheet(); route(); } else if ((location.hash || '').startsWith('#output')) fitPreview();
