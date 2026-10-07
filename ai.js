@@ -141,7 +141,7 @@ window.SudoAI = (function () {
       if (res.ok) return pick(settings.provider, data);
       const msg = (data.error && (data.error.message || data.error.type)) || ('HTTP ' + res.status);
       if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt < 3) { await wait(8000 * (attempt + 1)); continue; }
-      const hint = res.status === 403 ? ' — API 키 종류가 맞지 않습니다. 콘솔 API Keys에서 만든 sk-ant-api 키를 Worker에 넣어 주세요'
+      const hint = res.status === 403 ? ' — Claude가 요청을 막았습니다. 대개 Cloudflare가 홍콩 서버를 거쳐 보냈을 때 생깁니다. Worker 설정의 Placement를 미국으로 바꿔 주세요'
         : res.status === 401 && /api.key|x-api-key|authentication/i.test(msg) ? ' — API 키가 틀렸습니다. Worker의 키 값을 확인해 주세요'
         : /credit|balance/i.test(msg) ? ' — 크레딧이 부족합니다. 콘솔 Billing에서 충전해 주세요' : '';
       throw new Error(msg + hint);

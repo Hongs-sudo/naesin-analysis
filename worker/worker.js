@@ -75,7 +75,7 @@ export default {
     catch (e) { return json({ error: { message: e.message } }, 401, H); }
 
     if (path === '/status' && request.method === 'GET') {
-      return json({ ok: true, claude: !!env.ANTHROPIC_API_KEY, openai: !!env.OPENAI_API_KEY }, 200, H);
+      return json({ ok: true, claude: !!env.ANTHROPIC_API_KEY, openai: !!env.OPENAI_API_KEY, colo: (request.cf && request.cf.colo) || '' }, 200, H);
     }
 
     let upstream, headers;

@@ -228,7 +228,7 @@ window.SudoRegister = function (H) {
       const msg = $('#aiMsg'); msg.textContent = '확인하는 중…';
       try {
         const s = await window.SudoAI.status(Object.assign({}, R.ai, { url: $('#aiUrl').value.trim() || R.ai.url }), ctx.getToken);
-        msg.textContent = `연결됐습니다. Claude 키 ${s.claude ? '있음' : '없음'} · GPT 키 ${s.openai ? '있음' : '없음'}`
+        msg.textContent = `연결됐습니다. Claude 키 ${s.claude ? '있음' : '없음'} · GPT 키 ${s.openai ? '있음' : '없음'}${s.colo ? ` · 처리 위치 ${s.colo}${s.colo === 'HKG' ? ' (홍콩: Claude가 막을 수 있음)' : ''}` : ''}`
           + ((R.ai.provider === 'claude' && !s.claude) || (R.ai.provider === 'openai' && !s.openai) ? ' — 고른 AI의 키가 Worker에 없습니다.' : '');
       } catch (e) { msg.textContent = '연결하지 못했습니다: ' + e.message; }
     };
