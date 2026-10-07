@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 원장님 Google 계정만 읽고 쓸 수 있음. 선생님을 추가하려면 목록에 이메일을 더한다.
+    function allowed() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && request.auth.token.email in ['ilmvm66@gmail.com'];
+    }
+    match /{document=**} {
+      allow read, write: if allowed();
+    }
+  }
+}
