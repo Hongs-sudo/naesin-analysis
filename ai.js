@@ -91,9 +91,9 @@ window.SudoAI = (function () {
     content.push({ type: 'text', text });
     return {
       model, max_tokens: 16000,
-      system: '당신은 한국 중학교 수학 내신 시험지를 문항별로 분석하는 꼼꼼한 조교입니다. 반드시 save_items 도구 하나로만 답합니다.',
+      system: '당신은 한국 중학교 수학 내신 시험지를 문항별로 분석하는 꼼꼼한 조교입니다. 설명 글 없이 반드시 save_items 도구를 한 번 호출해서 모든 문항을 넘깁니다.',
       tools: [{ name: 'save_items', description: '문항별 분석 결과를 저장한다', input_schema: schema }],
-      tool_choice: { type: 'tool', name: 'save_items' },
+      tool_choice: { type: 'auto' }, // 일부 모델은 강제 지정을 받지 않아서 '알아서'로 두고 지시문으로 요구
       messages: [{ role: 'user', content }]
     };
   }
@@ -111,7 +111,12 @@ window.SudoAI = (function () {
   }
   function pick(provider, data) {
     if (provider === 'claude') {
-      const t = (data.content || []).find(c => c.type === 'tool_use');
+      let t = (data.content || []).find(c => c.type === 'tool_use');
+      if (!t) { // 도구 대신 글로 JSON을 준 경우
+        const txt = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+        const m = txt.match(/\{[\s\S]*"items"[\s\S]*\}/);
+        if (m) { try { t = { input: JSON.parse(m[0]) }; } catch (_) {} }
+      }
       if (!t) throw new Error('AI가 문항표를 돌려주지 않았습니다' + (data.stop_reason ? ` (${data.stop_reason})` : ''));
       if (data.stop_reason === 'max_tokens') throw new Error('답이 길어 잘렸습니다. 파일을 나눠서 다시 해 주세요');
       return { result: t.input, usage: { in: data.usage && data.usage.input_tokens, out: data.usage && data.usage.output_tokens } };
