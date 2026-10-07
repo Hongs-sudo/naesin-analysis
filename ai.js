@@ -90,7 +90,7 @@ window.SudoAI = (function () {
       : { type: 'image', source: { type: 'base64', media_type: p.kind, data: p.b64 } });
     content.push({ type: 'text', text });
     return {
-      model, max_tokens: 16000,
+      model, max_tokens: 32000,
       system: '당신은 한국 중학교 수학 내신 시험지를 문항별로 분석하는 꼼꼼한 조교입니다. 설명 글 없이 반드시 save_items 도구를 한 번 호출해서 모든 문항을 넘깁니다.',
       tools: [{ name: 'save_items', description: '문항별 분석 결과를 저장한다', input_schema: schema }],
       tool_choice: { type: 'auto' }, // 일부 모델은 강제 지정을 받지 않아서 '알아서'로 두고 지시문으로 요구
