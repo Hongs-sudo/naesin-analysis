@@ -8,6 +8,7 @@
     messagingSenderId: '754171401551',
     appId: '1:754171401551:web:8f351feecbc0d6d9e0e13a'
   };
+  document.body.dataset.mode = innerWidth >= 1200 ? 'pc' : innerWidth >= 768 ? 'tab' : 'phone';
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
