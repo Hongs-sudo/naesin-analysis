@@ -332,6 +332,13 @@ body.locked { overflow: hidden }
 .dchip.d1 { background: var(--d1); color: var(--fg) } .dchip.d2 { background: var(--d2); color: var(--fg) }
 .dchip.d3 { background: var(--d3); color: var(--bg) } .dchip.d4 { background: var(--d4); color: #FFFFFF }
 
+/* 선생님 의견 */
+.notebox { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface) }
+.notebox .chk small { color: var(--muted); font-size: 12px }
+.noteform { display: flex; flex-direction: column; gap: 8px }
+.nsel { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--muted) }
+.nsel input, .nsel textarea { font: inherit; font-size: 14px; font-weight: 400; color: var(--fg); border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); padding: 8px 10px; width: 100% }
+.nsel textarea { resize: vertical; line-height: 1.6; min-height: 110px }
 /* ===== 시험 등록 · 검수 (4단계) ===== */
 .steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; counter-reset: st; flex-wrap: wrap }
 .steps li { counter-increment: st; flex: 1 1 140px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; color: var(--muted) }
@@ -435,3 +442,4 @@ body[data-mode="tab"] .cutrow { grid-template-columns: repeat(3, minmax(0, 1fr))
   .pgwrap { break-after: page }
   @page { size: A4; margin: 0 }
 }
+.outact .notebox { flex-basis: 100%; width: 100% }

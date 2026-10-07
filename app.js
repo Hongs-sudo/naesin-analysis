@@ -451,12 +451,14 @@ window.startApp = function (D, ctx) {
   anRefresh();
   const OUT = Object.assign({ id: (analyzedExams[0] || {}).id, fmt: 'simple' }, store.get('output', {}));
   if (!byId[OUT.id] || !byId[OUT.id].an) OUT.id = (analyzedExams[0] || {}).id;
+  const NOTE = Object.assign({ on: false, student: '', text: '', by: '' }, store.get('note', {}));
+  const saveNote = () => store.set('note', { on: NOTE.on, by: NOTE.by });
   const FMT = [['simple', '간결 분석지', 'A4 1장 · 학부모 기본형'], ['card', '카톡 카드', '휴대폰 화면 한 장'], ['detail', '상세 분석지', 'A4 2쪽 · 단원·비교까지']];
   function renderOutput() {
     store.set('output', { id: OUT.id, fmt: OUT.fmt });
     const e = byId[OUT.id];
     if (!e) { $('#main').innerHTML = '<div class="empty">분석된 시험이 없습니다.</div>'; return; }
-    const pages = window.SudoReport.build(OUT.fmt, e, rctx);
+    const pages = window.SudoReport.build(OUT.fmt, e, rctx, NOTE);
     const canShare = !!(navigator.canShare && window.File && (() => { try { return navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }); } catch (_) { return false; } })());
     $('#main').innerHTML = `
       <div class="head"><div><div class="kicker">학부모님께 보내는 분석지</div><h1>분석지 만들기</h1></div></div>
@@ -467,6 +469,15 @@ window.startApp = function (D, ctx) {
       <div class="outwrap">
         <section class="preview" id="preview">${pages.map((p, i) => `<div class="pgwrap" data-pg="${i}"><div class="pg">${p}</div>${pages.length > 1 ? `<button type="button" class="btn sm copy1" data-pg="${i}">${i + 1}쪽 이미지 복사하기</button>` : ''}</div>`).join('')}</section>
         <aside class="outact">
+          <section class="notebox">
+            <label class="chk"><input type="checkbox" id="noteOn" ${NOTE.on ? 'checked' : ''}> <b>선생님 의견 넣기</b> <small>학생마다 따로</small></label>
+            ${NOTE.on ? `<div class="noteform">
+              <label class="nsel"><span>학생 이름</span><input id="noteStudent" value="${esc(NOTE.student)}" placeholder="예: 김민준 (비우면 표시 안 함)"></label>
+              <label class="nsel"><span>의견</span><textarea id="noteText" rows="5" placeholder="이번 시험에서 잘한 점, 아쉬운 점, 다음 시험까지 할 일">${esc(NOTE.text)}</textarea></label>
+              <label class="nsel"><span>작성</span><input id="noteBy" value="${esc(NOTE.by)}" placeholder="예: 수학도서관 홍길동 선생님"></label>
+              <button type="button" class="linkbtn" id="noteClear">다음 학생 (이름·의견 비우기)</button>
+            </div>` : ''}
+          </section>
           <button type="button" class="btn big" id="copyImg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>이미지 복사하기</button>
           <p class="dl">복사한 뒤 카톡이나 문자 입력창을 길게 눌러 <b>붙여넣기</b> 하세요.${pages.length > 1 ? ' 두 쪽이면 쪽마다 복사합니다.' : ''}</p>
           ${canShare ? '<button type="button" class="btn ghost" id="shareImg">공유 (카톡 바로 보내기)</button>' : ''}
@@ -480,8 +491,12 @@ window.startApp = function (D, ctx) {
     fitPreview();
     $('#preview').addEventListener('input', ev => { const r = ev.target.closest('.rpt'); if (r) { window.SudoReport.fit(r); } });
     $('#outExam').onchange = ev => { OUT.id = ev.target.value; renderOutput(); };
+    $('#noteOn').onchange = ev => { NOTE.on = ev.target.checked; saveNote(); renderOutput(); };
+    const liveNote = () => { $$('#preview .rpt').forEach(r => { window.SudoReport.setNote(r, NOTE); window.SudoReport.fit(r); }); fitPreview(); };
+    [['#noteStudent', 'student'], ['#noteText', 'text'], ['#noteBy', 'by']].forEach(([sel, k]) => { const el = $(sel); if (el) el.oninput = () => { NOTE[k] = el.value.trim(); if (k === 'by') saveNote(); liveNote(); }; });
+    const nc = $('#noteClear'); if (nc) nc.onclick = () => { NOTE.student = ''; NOTE.text = ''; $('#noteStudent').value = ''; $('#noteText').value = ''; liveNote(); $('#noteStudent').focus(); };
     $$('.fmt').forEach(b => b.onclick = () => { OUT.fmt = b.dataset.fmt; renderOutput(); });
-    const name = i => `${short(e.s)}중_${e.y}_${e.g}-${e.t}_${e.x}_${FMT.find(f => f[0] === OUT.fmt)[1]}${pages.length > 1 ? '_' + (i + 1) + '쪽' : ''}.png`;
+    const name = i => `${NOTE.on && NOTE.student ? NOTE.student + '_' : ''}${short(e.s)}중_${e.y}_${e.g}-${e.t}_${e.x}_${FMT.find(f => f[0] === OUT.fmt)[1]}${pages.length > 1 ? '_' + (i + 1) + '쪽' : ''}.png`;
     const node = i => $$('#preview .rpt')[i];
     const run = (btn, p, okMsg) => {
       const old = btn.innerHTML; btn.disabled = true; btn.classList.add('busy');

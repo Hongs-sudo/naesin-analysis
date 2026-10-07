@@ -114,6 +114,7 @@
             ${editable(t[0], 'span', 'font-size:15px;font-weight:700')}
             ${editable(t[1], 'span', `font-size:13px;line-height:1.6;color:${K.ink2}`)}</div>`).join('')}</div>
       </section>
+<!--NOTE-->
       <footer style="margin-top:auto;display:flex;justify-content:space-between;font-size:11px;color:${K.mute};border-top:1px solid ${K.line};padding-top:10px">
         <span>수학도서관이 실제 시험지를 문항별로 분류해 작성했습니다.</span><span style="font-weight:700;color:${K.g}">1:1 명품 맞춤 수학학원 수학도서관</span></footer>
     </div>`;
@@ -150,6 +151,7 @@
         <div style="background:${K.g};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;color:#fff">
           <div style="font-size:15px;font-weight:900;color:${K.gold2}">다음 시험 준비 ${S.todo.length}가지</div>
           ${S.todo.map((t, k) => `<div style="display:flex;gap:10px;font-size:14px;line-height:1.5"><b style="color:${K.gold2}">0${k + 1}</b>${editable(t[0] + ' — ' + t[1])}</div>`).join('')}</div>
+<!--NOTE-->
         <div style="text-align:center;font-size:12px;color:${K.mute};padding:4px 0 6px">1:1 명품 맞춤 수학학원 · 수학도서관</div>
       </div></div>`;
   }
@@ -251,6 +253,7 @@
           ${S.todo.map((t, k) => `<div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;border-bottom:1px solid #ECF1EF">${editable(t[0], 'b', `font-size:13px;color:${K.g}`)}${editable(t[1], 'span', `font-size:12px;line-height:1.5;color:${K.ink2}`)}</div>`).join('')}
         </section>
       </div>
+<!--NOTE-->
       <footer style="margin-top:auto;display:flex;justify-content:space-between;font-size:10px;color:${K.mute};border-top:1px solid ${K.line};padding-top:8px"><span>1:1 명품 맞춤 수학학원 수학도서관</span><span>2 / 2</span></footer>
     </div>`;
   }
@@ -318,13 +321,31 @@
     if (inn.scrollHeight > 1123 / z + 0.5) z = Math.max(0.6, 1123 / inn.scrollHeight), inn.style.width = (794 / z) + 'px', inn.style.minHeight = (1123 / z) + 'px';
     inn.style.transform = z < 1 ? `scale(${z})` : 'none';
   }
+  // 선생님 의견 칸 (학생마다 따로 붙이는 글)
+  function noteBox(note, small) {
+    if (!note || !note.on) return '';
+    const ph = `color:${K.mute};font-weight:400`;
+    return `<div data-notebox style="border:1.5px solid ${K.gold2};border-radius:${small ? 14 : 12}px;background:#FFFDF8;padding:${small ? '14px 16px' : '14px 18px'};display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <b style="font-size:${small ? 15 : 15}px;font-weight:900;color:${K.goldFg}">선생님 의견</b>
+        <span data-note-student style="font-size:${small ? 13 : 13}px;font-weight:700;color:${K.g}">${note.student ? esc(note.student) + ' 학생' : ''}</span></div>
+      <div data-note-text style="font-size:${small ? 14 : 13.5}px;line-height:1.7;color:${K.ink};white-space:pre-wrap;word-break:keep-all">${note.text ? esc(note.text) : `<span style="${ph}">왼쪽(아래) 칸에 의견을 적으면 여기에 들어갑니다.</span>`}</div>
+      <div data-note-by style="text-align:right;font-size:12px;color:${K.mute}">${note.by ? '— ' + esc(note.by) : ''}</div></div>`;
+  }
+  function setNote(root, note) {
+    root.querySelectorAll('[data-note-student]').forEach(x => { x.textContent = note.student ? note.student + ' 학생' : ''; });
+    root.querySelectorAll('[data-note-text]').forEach(x => { if (note.text) x.textContent = note.text; else x.innerHTML = `<span style="color:${K.mute};font-weight:400">왼쪽(아래) 칸에 의견을 적으면 여기에 들어갑니다.</span>`; });
+    root.querySelectorAll('[data-note-by]').forEach(x => { x.textContent = note.by ? '— ' + note.by : ''; });
+  }
   window.SudoReport = {
-    build(format, e, ctx) {
+    build(format, e, ctx, note) {
       const S = summarize(e, ctx);
-      if (format === 'card') return [card(e, S)];
-      if (format === 'detail') return [detail1(e, S), detail2(e, S, ctx)].map(wrapA4);
-      return [simple(e, S)].map(wrapA4);
+      const put = (h, small) => h.replace('<!--NOTE-->', noteBox(note, small));
+      if (format === 'card') return [put(card(e, S), true)];
+      if (format === 'detail') return [detail1(e, S), put(detail2(e, S, ctx))].map(wrapA4);
+      return [put(simple(e, S))].map(wrapA4);
     },
+    setNote,
     fit,
     copyImage, shareImage, saveImage
   };
