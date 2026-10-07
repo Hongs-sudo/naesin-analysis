@@ -35,8 +35,8 @@ window.startApp = function (D, ctx) {
     const t = $('#toast'); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600);
   }
-  function copyText(btn, text) {
-    const done = () => toast('경로를 복사했습니다');
+  function copyText(btn, text, msg) {
+    const done = () => toast(msg || '경로를 복사했습니다');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fb); else fb();
     function fb() { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (_) { toast('복사하지 못했습니다'); } ta.remove(); }
   }
@@ -470,6 +470,7 @@ window.startApp = function (D, ctx) {
           <button type="button" class="btn big" id="copyImg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>이미지 복사하기</button>
           <p class="dl">복사한 뒤 카톡이나 문자 입력창을 길게 눌러 <b>붙여넣기</b> 하세요.${pages.length > 1 ? ' 두 쪽이면 쪽마다 복사합니다.' : ''}</p>
           ${canShare ? '<button type="button" class="btn ghost" id="shareImg">공유 (카톡 바로 보내기)</button>' : ''}
+          ${ctx ? `<button type="button" class="btn ghost" id="linkShare">링크로 보내기 <small>휴대폰 화면 가득</small></button>` : ''}
           <button type="button" class="btn ghost" id="saveImg">이미지로 저장</button>
           ${MODE === 'phone' ? '' : '<button type="button" class="btn ghost" id="printIt">인쇄 · PDF</button>'}
           <p class="dl">‘다음 시험 준비’ 글은 분석지 위에서 눌러 바로 고칠 수 있습니다. 고친 글은 복사·저장에 그대로 들어갑니다.</p>
@@ -491,6 +492,22 @@ window.startApp = function (D, ctx) {
     $$('.copy1').forEach(b => b.onclick = ev => run(ev.currentTarget, window.SudoReport.copyImage(node(+b.dataset.pg)), `${+b.dataset.pg + 1}쪽을 복사했습니다`));
     const sh = $('#shareImg'); if (sh) sh.onclick = ev => run(ev.currentTarget, window.SudoReport.shareImage(node(0), name(0)), '');
     $('#saveImg').onclick = ev => run(ev.currentTarget, (async () => { for (let i = 0; i < pages.length; i++) await window.SudoReport.saveImage(node(i), name(i)); return 'saved_ok'; })().then(() => { toast('이미지를 저장했습니다'); return 'quiet'; }), '');
+    const ls = $('#linkShare'); if (ls) ls.onclick = () => {
+      // 분석지를 지금 모습(고친 글 포함) 그대로 공개용 링크로 저장. 주소는 길고 무작위라 아는 사람만 열 수 있음
+      const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789', rnd = crypto.getRandomValues(new Uint8Array(18));
+      const id = [...rnd].map(x => a[x % a.length]).join('');
+      const html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); return c.outerHTML; });
+      const title = `${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석`;
+      const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'r.html#' + id;
+      const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, createdAt: new Date().toISOString() });
+      saved.then(() => {}, err => toast('링크를 만들지 못했습니다: ' + err.message));
+      if (MODE === 'phone' && navigator.share) {
+        navigator.share({ title: '수학도서관 · ' + title, url }).catch(() => {});
+      } else if (navigator.clipboard && window.ClipboardItem) {
+        navigator.clipboard.write([new ClipboardItem({ 'text/plain': saved.then(() => new Blob([url], { type: 'text/plain' })) })])
+          .then(() => toast('링크를 복사했습니다. 카톡에 붙여넣기 하세요'), () => saved.then(() => copyText(null, url, '링크를 복사했습니다. 카톡에 붙여넣기 하세요')));
+      } else saved.then(() => copyText(null, url, '링크를 복사했습니다. 카톡에 붙여넣기 하세요'));
+    };
     const pr = $('#printIt'); if (pr) pr.onclick = () => { document.body.classList.add('printing'); window.print(); setTimeout(() => document.body.classList.remove('printing'), 500); };
   }
   function fitPreview() {

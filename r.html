@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A4844">
+<title>수학도서관 내신 분석</title>
+<meta name="description" content="1:1 명품 맞춤 수학학원 수학도서관이 학교 시험을 문항 단위로 분석했습니다.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="수학도서관 · 내신 시험 분석">
+<meta property="og:description" content="학교 시험을 문항 단위로 분석한 결과입니다. 눌러서 보세요.">
+<meta property="og:image" content="https://hongs-sudo.github.io/naesin-analysis/assets/og.png">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+  :root { --brand: #0A4844; --cream: #F5F4EF; --muted: #56635F }
+  * { box-sizing: border-box }
+  html, body { margin: 0; background: var(--cream); color: #18211F; font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif }
+  body { -webkit-text-size-adjust: 100% }
+  .wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0 0 28px }
+  .page { width: 100%; overflow: hidden; background: #fff }
+  .page.card { max-width: 560px; background: transparent }
+  .page .rpt { transform-origin: 0 0 }
+  .page.card .rpt { width: 100% !important }
+  .msg { padding: 60px 24px; text-align: center; color: var(--muted); font-size: 15px; line-height: 1.7 }
+  .foot { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 16px 0 }
+  @media (min-width: 900px) { .wrap { padding-top: 24px } .page:not(.card) { box-shadow: 0 2px 16px rgba(0,0,0,.08) } }
+</style>
+</head>
+<body>
+<main class="wrap" id="wrap"><p class="msg">불러오는 중…</p></main>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+(function () {
+  firebase.initializeApp({
+    apiKey: 'AIzaSyCkLTkcgzVqVYVAq2qCnbq7HHKbggUo9PQ', authDomain: 'sudo-naesin.firebaseapp.com', projectId: 'sudo-naesin',
+    storageBucket: 'sudo-naesin.firebasestorage.app', messagingSenderId: '754171401551', appId: '1:754171401551:web:8f351feecbc0d6d9e0e13a'
+  });
+  const wrap = document.getElementById('wrap');
+  const id = (location.hash || '').slice(1).replace(/[^A-Za-z0-9]/g, '');
+  const fail = t => { wrap.innerHTML = '<p class="msg">' + t + '</p>'; };
+  if (!id) return fail('주소가 올바르지 않습니다.');
+  firebase.firestore().collection('shared').doc(id).get().then(snap => {
+    if (!snap.exists) return fail('링크가 만료되었거나 없는 분석지입니다.<br>학원에 문의해 주세요.');
+    const d = snap.data();
+    document.title = '수학도서관 · ' + (d.title || '내신 분석');
+    wrap.innerHTML = (d.html || []).map(h => '<section class="page">' + h + '</section>').join('')
+      + '<p class="foot">1:1 명품 맞춤 수학학원 수학도서관</p>';
+    // 사진·로고 주소는 앱 기준 상대 경로라 그대로 맞음 (같은 폴더)
+    const fit = () => {
+      document.querySelectorAll('.page').forEach(p => {
+        const r = p.querySelector('.rpt'); if (!r) return;
+        const w = +r.dataset.w || 794;
+        if (w <= 420) { p.classList.add('card'); r.style.transform = 'none'; p.style.height = ''; return; }
+        const sc = Math.min(1, p.clientWidth / w);
+        r.style.transform = 'scale(' + sc + ')';
+        p.style.height = Math.ceil(r.offsetHeight * sc) + 'px';
+        p.style.maxWidth = w + 'px';
+      });
+    };
+    fit();
+    if (document.querySelector('.page.card')) { const f = document.querySelector('.foot'); if (f) f.remove(); }
+    addEventListener('resize', fit);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  }).catch(e => fail('분석지를 불러오지 못했습니다. (' + (e.code || e.message) + ')'));
+})();
+</script>
+</body>
+</html>

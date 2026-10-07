@@ -108,6 +108,7 @@
     const ctx = {
       user: user.email,
       signOut: () => auth.signOut(),
+      shareReport: (id, data) => db.collection('shared').doc(id).set(data),
       saveTypeName: (code, name) => db.collection('types').doc(code).update({ name, editedAt: new Date().toISOString() }),
       getToken: () => auth.currentUser.getIdToken(),
       saveAI: s => db.doc('meta/ai').set(s),
