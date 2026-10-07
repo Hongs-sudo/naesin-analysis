@@ -12,7 +12,7 @@ window.SudoRegister = function (H) {
   const R = {
     pick: 'archive', school: MAIN4[0], onlyRaw: true, examId: null,
     meta: { school: '', year: new Date().getFullYear(), grade: 2, sem: 2, exam: '중간' },
-    files: [], busy: null, draft: null, ai: Object.assign({}, AI_DEFAULT, D.ai || {}),
+    files: [], busy: null, draft: null, withAns: (() => { try { return localStorage.getItem('sudo.withAns') === '1'; } catch (_) { return false; } })(), ai: Object.assign({}, AI_DEFAULT, D.ai || {}),
     batch: { map: null, list: [], running: false, stop: false, school: '4개 학교', year: '전체' }
   };
   D.drafts = D.drafts || {};
@@ -51,7 +51,7 @@ window.SudoRegister = function (H) {
   };
   function idOf(m) { return `${m.school}-${m.year}-${m.grade}-${m.sem}-${m.exam}`; }
   function metaOf(e) { return { school: e.s, year: e.y, grade: e.g, sem: e.t, exam: e.x }; }
-  function emptyRow(no) { return { no, pts: '', diff: 0, beh: '', essay: 0, big: '', mid: '', type: '', code: '', conf: 1, note: '', ok: 1 }; }
+  function emptyRow(no) { return { no, pts: '', diff: 0, beh: '', essay: 0, big: '', mid: '', type: '', code: '', conf: 1, note: '', ok: 1, ans: '', sol: '' }; }
   function newDraft(meta, source, rows, extra) {
     const id = idOf(meta);
     return Object.assign({ id, isNew: !byId[id], meta: Object.assign({}, meta, { course: courseOf(meta) }), rows, level: '', cuts: {}, source, warnings: [], updatedAt: now() }, extra || {});
@@ -65,6 +65,7 @@ window.SudoRegister = function (H) {
       r.beh = BEHK[['이해', '계산', '추론', '문제해결'].indexOf(it.beh)] || '';
       r.essay = it.essay ? 1 : 0;
       r.note = it.note || '';
+      r.ans = it.ans || ''; r.sol = it.sol || '';
       r.conf = typeof it.conf === 'number' ? it.conf : 0.5;
       const c = it.code && ci[it.code] !== undefined ? D.catalog[ci[it.code]] : null;
       if (c && c[1] === course) { r.code = c[0]; r.big = c[2]; r.mid = `${c[3]}.${c[4]}`; r.type = `${c[5]}.${c[6]}`; }
@@ -77,7 +78,7 @@ window.SudoRegister = function (H) {
   function draftFromAnalysis(e) {
     const rows = e.an.items.map(i => {
       const r = emptyRow(i[0]);
-      Object.assign(r, { pts: i[1], diff: i[2], beh: i[3], essay: i[9], big: i[5], mid: i[6], type: i[7], code: i[8] >= 0 ? D.catalog[i[8]][0] : '' });
+      Object.assign(r, { pts: i[1], diff: i[2], beh: i[3], essay: i[9], big: i[5], mid: i[6], type: i[7], code: i[8] >= 0 ? D.catalog[i[8]][0] : '', ans: i[10] || '', sol: i[11] || '' });
       return r;
     });
     return newDraft(metaOf(e), { kind: 'edit', at: now() }, rows, { level: e.an.level || '', cuts: Object.assign({}, e.an.cuts || {}) });
@@ -109,6 +110,7 @@ window.SudoRegister = function (H) {
           <section class="card"><h2>③ 문항표 채우기</h2>
             ${R.busy ? `<div class="busybox"><span class="spin" aria-hidden="true"></span><div><b>${esc(R.busy.label)}</b><span id="busyT">${esc(R.busy.sub || '')}</span></div><button type="button" class="btn ghost sm" id="cancelAI">그만두기</button></div>` : `
             <div class="fillrow">
+              <label class="chk ansopt"><input type="checkbox" id="withAns" ${R.withAns ? 'checked' : ''}> 정답도 AI가 풀기 <small>답지가 없을 때 · 시간과 비용이 조금 더 듭니다</small></label>
               <button type="button" class="btn big" id="runAI" ${ready ? '' : 'disabled'}>AI로 문항표 채우기</button>
               <div class="manual"><label>문항 수 <input type="number" id="nItems" min="1" max="40" value="24"></label><button type="button" class="btn ghost" id="runManual">직접 입력</button></div>
             </div>
@@ -191,6 +193,7 @@ window.SudoRegister = function (H) {
       const n = Math.max(1, Math.min(40, +$('#nItems').value || 24));
       openDraft(newDraft(m, { kind: 'manual', at: now() }, Array.from({ length: n }, (_, i) => emptyRow(i + 1))));
     };
+    const wa = $('#withAns'); if (wa) wa.onchange = () => { R.withAns = wa.checked; try { localStorage.setItem('sudo.withAns', wa.checked ? '1' : '0'); } catch (_) {} };
     const ca = $('#cancelAI'); if (ca) ca.onclick = () => { if (R.busy && R.busy.ctrl) R.busy.ctrl.abort(); };
     $$('[data-draft]').forEach(b => b.onclick = () => openDraft(JSON.parse(JSON.stringify(D.drafts[b.dataset.draft]))));
     bindAI(); bindBatch();
@@ -240,8 +243,8 @@ window.SudoRegister = function (H) {
     const tick = setInterval(() => { const el = $('#busyT'); if (el) el.textContent = `${Math.round((Date.now() - t0) / 1000)}초 · 창을 닫지 말아 주세요`; }, 1000);
     try {
       const course = courseOf(m);
-      const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, files: R.files, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), signal: ctrl.signal });
-      const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000) }, rowsFromAI(result, course));
+      const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, files: R.files, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), signal: ctrl.signal, withAns: R.withAns });
+      const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), withAns: R.withAns }, rowsFromAI(result, course));
       d.warnings = result.warnings || [];
       if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
       R.files = [];
@@ -272,6 +275,7 @@ window.SudoRegister = function (H) {
     const cnt = [0, 0, 0, 0, 0]; rows.forEach(r => cnt[r.diff]++);
     const mids = midsOf(course, rows);
     const src = d.source || {};
+    const showAns = !!(d.showAns || src.withAns || rows.some(r => r.ans));
     const mdl = (window.SudoAI.MODELS[src.provider] || []).find(x => x[0] === src.model);
     const srcText = src.kind === 'ai' ? `${mdl ? mdl[1].replace(/ \(.*\)$/, '') : src.model}가 읽음${src.secs ? ` · ${src.secs}초` : ''}` : src.kind === 'edit' ? '저장된 문항표 고치기' : '직접 입력';
     $('#main').innerHTML = `
@@ -288,12 +292,12 @@ window.SudoRegister = function (H) {
       ${d.warnings && d.warnings.length ? `<div class="callout">${d.warnings.map(w => esc(w)).join('<br>')}</div>` : ''}
       <details class="card cuts"><summary>등급컷 넣기 <small>선택 · 학교 알리미 등에서 확인한 값</small></summary><div class="cutrow">${['1등급', '2등급', '3등급', '4등급', '5등급'].map(k => `<label class="sel"><span>${k}</span><input data-cut="${k}" value="${esc((d.cuts || {})[k] || '')}" placeholder="예: 89점"></label>`).join('')}</div></details>
       <div class="tablewrap rvwrap"><table class="rvtbl">
-        <thead><tr><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th><th>확인</th><th></th></tr></thead>
-        <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id)).join('')}</tbody></table></div>
-      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button><span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
+        <thead><tr><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
+        <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id, showAns)).join('')}</tbody></table></div>
+      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
     bindReview();
   }
-  function rowHtml(r, i, course, mids, selfId) {
+  function rowHtml(r, i, course, mids, selfId, showAns) {
     const types = r.mid ? typesOf(course, r.mid) : [];
     const known = r.code && types.some(([c]) => c[0] === r.code);
     const past = r.code ? pastOf(r.code, selfId) : [];
@@ -308,6 +312,7 @@ window.SudoRegister = function (H) {
       <td><select data-k="mid" aria-label="${r.no}번 중단원"><option value="">고르기</option>${midOpts}<option value="__new">＋ 새 중단원</option></select></td>
       <td><div class="tcell">${typeSel}${newIn}${past.length ? `<small class="past" title="${esc(past.map(p => `${p.s} ${p.e.y} ${p.e.g}-${p.e.t} ${p.e.x} ${p.no}번`).join('\n'))}">지난 출제 ${past.length}번 · ${esc(past.slice(0, 2).map(p => `${H.short(p.s)} ${p.e.g}-${p.e.t}${p.e.x[0]} ${p.no}번`).join(', '))}${past.length > 2 ? ' 외' : ''}</small>` : ''}${r.note ? `<small class="note">AI: ${esc(r.note)}</small>` : ''}</div></td>
       <td><input data-k="essay" type="checkbox" ${r.essay ? 'checked' : ''} aria-label="${r.no}번 서답형"></td>
+      ${showAns ? `<td><input data-k="ans" value="${esc(r.ans || '')}" class="w5" aria-label="${r.no}번 정답" title="${esc(r.sol || '')}">${r.sol ? `<small class="sol">${esc(r.sol)}</small>` : ''}</td>` : ''}
       <td><button type="button" class="okbtn" data-ok aria-pressed="${!!r.ok}" title="확인">${r.ok ? '✓' : '확인'}</button></td>
       <td><button type="button" class="xbtn" data-del title="문항 빼기" aria-label="${r.no}번 빼기">×</button></td></tr>`;
   }
@@ -319,6 +324,11 @@ window.SudoRegister = function (H) {
     $('#rvSave').onclick = ev => saveFinal(ev.currentTarget);
     $('#rvLevel').onchange = ev => { d.level = ev.target.value; touch(); };
     $$('[data-cut]').forEach(inp => inp.onchange = () => { d.cuts = d.cuts || {}; if (inp.value.trim()) d.cuts[inp.dataset.cut] = inp.value.trim(); else delete d.cuts[inp.dataset.cut]; touch(); });
+    const ra = $('#rvAns'); if (ra) ra.onclick = () => {
+      const m = d.meta, txt = `${m.school} ${m.year} ${m.grade}-${m.sem} ${m.exam} 정답\n` + d.rows.slice().sort((x, y) => x.no - y.no).map(r => `${r.no}. ${r.ans || '?'}`).join('\n');
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('정답표를 복사했습니다'), () => toast('복사하지 못했습니다'));
+    };
+    const ro = $('#rvAnsOn'); if (ro) ro.onclick = () => { d.showAns = true; touch(true); };
     $('#rvAdd').onclick = () => { d.rows.push(emptyRow((d.rows.reduce((m, r) => Math.max(m, +r.no || 0), 0)) + 1)); touch(true); };
     $$('.rvtbl tbody tr').forEach(tr => {
       const r = d.rows[+tr.dataset.i];
@@ -331,6 +341,7 @@ window.SudoRegister = function (H) {
         else if (k === 'beh') r.beh = el.value;
         else if (k === 'essay') r.essay = el.checked ? 1 : 0;
         else if (k === 'type') r.type = el.value.trim();
+        else if (k === 'ans') r.ans = el.value.trim();
         else if (k === 'mid') {
           if (el.value === '__new') {
             const name = prompt('새 중단원 이름 (예: 03.일차부등식)'); if (!name) { el.value = r.mid; return; }
@@ -407,7 +418,7 @@ window.SudoRegister = function (H) {
     }
     const analysis = {
       level: d.level || null, cuts: d.cuts || {}, essay: rows.filter(r => r.essay).length,
-      items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay })),
+      items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay, ans: r.ans || '', sol: r.sol || '' })),
       source: Object.assign({}, d.source || {}, { checkedAt: now() }), savedAt: now()
     };
     const isNew = !byId[d.id];
@@ -484,7 +495,7 @@ window.SudoRegister = function (H) {
         j.st = 'run'; j.msg = '읽는 중'; paint();
         try {
           const m = metaOf(j.e), course = courseOf(m);
-          const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, files: filesFor(j.e), meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m) });
+          const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, files: filesFor(j.e), meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), withAns: R.withAns });
           const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: filesFor(j.e).map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), batch: true }, rowsFromAI(result, course));
           d.warnings = result.warnings || [];
           if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);

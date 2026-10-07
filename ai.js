@@ -24,6 +24,21 @@ window.SudoAI = (function () {
       note: { type: 'string', description: '문항이 묻는 것 15자 안팎' }
     }
   };
+  // 정답까지 풀 때: 풀이 요지(sol)를 먼저 쓰고 정답(ans)을 쓰게 순서를 둔다
+  const ITEM_ANS = JSON.parse(JSON.stringify(ITEM));
+  ITEM_ANS.properties = Object.assign({}, ITEM.properties, {
+    sol: { type: 'string', description: '직접 푼 풀이의 핵심 (식·값 위주 80자 이내)' },
+    ans: { type: 'string', description: '정답. 객관식은 ①~⑤ (복수 정답은 ②,④), 서답형은 최종 값이나 식' }
+  });
+  ITEM_ANS.required = ITEM.required.concat(['sol', 'ans']);
+  const schemaFor = withAns => ({
+    type: 'object', additionalProperties: false, required: ['items', 'total_pts', 'warnings'],
+    properties: {
+      items: { type: 'array', items: withAns ? ITEM_ANS : ITEM },
+      total_pts: { type: ['number', 'null'], description: '배점 합계 (보이는 경우)' },
+      warnings: { type: 'array', items: { type: 'string' }, description: '흐릿한 쪽, 빠진 문항 등 원장님이 볼 점' }
+    }
+  });
   const SCHEMA = {
     type: 'object', additionalProperties: false, required: ['items', 'total_pts', 'warnings'],
     properties: {
@@ -33,7 +48,7 @@ window.SudoAI = (function () {
     }
   };
 
-  function prompt(meta, catalogLines, example) {
+  function prompt(meta, catalogLines, example, withAns) {
     return [
       `다음은 ${meta.school} ${meta.year}학년도 ${meta.grade}학년 ${meta.sem}학기 ${meta.exam}고사 수학 시험지입니다 (과정: ${meta.course}).`,
       '모든 문항을 빠짐없이 번호 순서대로 분석해 save_items 형식으로 돌려주세요.',
@@ -44,6 +59,7 @@ window.SudoAI = (function () {
       '[행동영역] 이해=개념·용어·성질 확인 / 계산=식 계산·값 구하기가 중심 / 추론=성질·조건으로 판단, 참거짓, 규칙 찾기 / 문제해결=상황을 식으로 세워 푸는 활용·도형 응용.',
       '[유형] 아래 유형 목록에서 가장 가까운 code를 고르고 big·mid·type에 그 이름을 적습니다. 꼭 맞는 것이 없으면 code는 ""로 두고, 교과서 단원 순서에 맞춰 big("Ⅰ.이름"), mid("NN.이름"), type(새 유형 이름)을 제안합니다.',
       '[확신도] 배점이 안 보이거나, 난이도·유형이 둘 사이에서 애매하면 conf를 0.6 아래로 둡니다.',
+      withAns ? '[정답] 모든 문항을 직접 풀어서 sol에 풀이 핵심을 먼저 적고 ans에 정답을 적습니다. 객관식은 보기 번호(①~⑤), 서답형은 최종 값이나 식. 정답지가 함께 있으면 정답지를 따르되 직접 푼 답과 다르면 warnings에 문항 번호를 적습니다. 문제가 흐려서 확실히 풀 수 없으면 conf를 0.5 아래로 둡니다.' : '',
       '[주의] 정답지·채점기준이 같이 들어 있으면 문항 분석은 시험지 기준으로 하고, 정답지는 배점 확인에만 씁니다. 흐릿하거나 잘린 쪽이 있으면 warnings에 적습니다.',
       '',
       catalogLines.length ? `[유형 목록] code | 대단원 | 중단원 | 유형\n${catalogLines.join('\n')}` : '[유형 목록] 이 과정은 아직 목록이 없습니다. 모든 문항을 code ""로 두고 단원·유형을 제안해 주세요.',
@@ -68,7 +84,7 @@ window.SudoAI = (function () {
     return out;
   }
 
-  function claudeBody(model, parts, text) {
+  function claudeBody(model, parts, text, schema) {
     const content = parts.map(p => p.kind === 'pdf'
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: p.b64 }, title: p.name }
       : { type: 'image', source: { type: 'base64', media_type: p.kind, data: p.b64 } });
@@ -76,12 +92,12 @@ window.SudoAI = (function () {
     return {
       model, max_tokens: 16000,
       system: '당신은 한국 중학교 수학 내신 시험지를 문항별로 분석하는 꼼꼼한 조교입니다. 반드시 save_items 도구 하나로만 답합니다.',
-      tools: [{ name: 'save_items', description: '문항별 분석 결과를 저장한다', input_schema: SCHEMA }],
+      tools: [{ name: 'save_items', description: '문항별 분석 결과를 저장한다', input_schema: schema }],
       tool_choice: { type: 'tool', name: 'save_items' },
       messages: [{ role: 'user', content }]
     };
   }
-  function openaiBody(model, parts, text) {
+  function openaiBody(model, parts, text, schema) {
     const content = parts.map(p => p.kind === 'pdf'
       ? { type: 'input_file', filename: p.name, file_data: 'data:application/pdf;base64,' + p.b64 }
       : { type: 'input_image', image_url: `data:${p.kind};base64,${p.b64}` });
@@ -90,7 +106,7 @@ window.SudoAI = (function () {
       model,
       instructions: '당신은 한국 중학교 수학 내신 시험지를 문항별로 분석하는 꼼꼼한 조교입니다. 주어진 JSON 형식으로만 답합니다.',
       input: [{ role: 'user', content }],
-      text: { format: { type: 'json_schema', name: 'save_items', schema: SCHEMA, strict: true } }
+      text: { format: { type: 'json_schema', name: 'save_items', schema, strict: true } }
     };
   }
   function pick(provider, data) {
@@ -108,12 +124,13 @@ window.SudoAI = (function () {
 
   const wait = ms => new Promise(r => setTimeout(r, ms));
   // settings: {url, provider, model}, getToken: () => Promise<idToken>
-  async function analyze({ settings, getToken, files, meta, catalogLines, example, signal }) {
+  async function analyze({ settings, getToken, files, meta, catalogLines, example, signal, withAns }) {
     const parts = await fileParts(files);
     const size = parts.reduce((s, p) => s + p.b64.length, 0);
     if (size > 30e6) throw new Error('파일이 너무 큽니다 (합계 22MB 이하로 넣어 주세요)');
-    const text = prompt(meta, catalogLines, example);
-    const body = JSON.stringify(settings.provider === 'claude' ? claudeBody(settings.model, parts, text) : openaiBody(settings.model, parts, text));
+    const text = prompt(meta, catalogLines, example, withAns);
+    const schema = schemaFor(!!withAns);
+    const body = JSON.stringify(settings.provider === 'claude' ? claudeBody(settings.model, parts, text, schema) : openaiBody(settings.model, parts, text, schema));
     const base = settings.url.replace(/\/+$/, '');
     for (let attempt = 0; ; attempt++) {
       const res = await fetch(`${base}/${settings.provider}`, {

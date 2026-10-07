@@ -45,7 +45,7 @@
       analyzed[d.id] = {
         level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,
         items: (a.items || []).map(i => [i.no, i.pts, DIFF[i.diff] || 0, BEH[i.beh] || '', i.course || '', i.big || '', i.mid || '', i.type || '',
-          i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0])
+          i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || ''])
       };
     });
     const exams = ex.docs.map(d => {

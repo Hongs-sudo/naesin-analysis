@@ -513,7 +513,7 @@ window.startApp = function (D, ctx) {
       D.exams.push(e); byId[id] = e;
     }
     A[id] = { level: analysis.level, cuts: analysis.cuts, essay: analysis.essay, source: analysis.source,
-      items: analysis.items.map(i => [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course, i.big, i.mid, i.type, idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0]) };
+      items: analysis.items.map(i => [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course, i.big, i.mid, i.type, idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || '']) };
     byId[id].an = A[id];
     listsRefresh(); recRefresh(); anRefresh();
     const sc = $('#sideCount'); if (sc) sc.textContent = `${D.exams.length}개 시험 · ${schools.length}개 학교`;
