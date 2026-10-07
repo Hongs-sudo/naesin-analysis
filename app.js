@@ -15,8 +15,12 @@ window.startApp = function (D, ctx) {
   const A = D.analyzed;
   D.exams.forEach(e => { e.an = A[e.id] || null; });
   const byId = Object.fromEntries(D.exams.map(e => [e.id, e]));
-  const schools = [...new Set(D.exams.map(e => e.s))].sort((a, b) => (MAIN4.includes(b) - MAIN4.includes(a)) || a.localeCompare(b, 'ko'));
-  const years = [...new Set(D.exams.map(e => e.y))].sort((a, b) => b - a);
+  const schools = [], years = [];
+  function listsRefresh() {
+    schools.length = 0; schools.push(...[...new Set(D.exams.map(e => e.s))].sort((a, b) => (MAIN4.includes(b) - MAIN4.includes(a)) || a.localeCompare(b, 'ko')));
+    years.length = 0; years.push(...[...new Set(D.exams.map(e => e.y))].sort((a, b) => b - a));
+  }
+  listsRefresh();
   const order = (a, b) => a.y - b.y || a.g - b.g || a.t - b.t || (a.x === '기말') - (b.x === '기말');
   const store = {
     get(k, d) { try { const v = localStorage.getItem('sudo.' + k); return v ? JSON.parse(v) : d; } catch (_) { return d; } },
@@ -96,7 +100,11 @@ window.startApp = function (D, ctx) {
     return out;
   }
   const REC = {};
-  D.exams.filter(e => e.an).forEach(e => e.an.items.forEach(i => { if (i[8] >= 0) (REC[i[8]] = REC[i[8]] || []).push({ s: e.s, e, no: i[0] }); }));
+  function recRefresh() {
+    Object.keys(REC).forEach(k => delete REC[k]);
+    D.exams.filter(e => e.an).forEach(e => e.an.items.forEach(i => { if (i[8] >= 0) (REC[i[8]] = REC[i[8]] || []).push({ s: e.s, e, no: i[0] }); }));
+  }
+  recRefresh();
 
   // 분석지에서 쓰는 도우미
   const rctx = {
@@ -193,18 +201,22 @@ window.startApp = function (D, ctx) {
         <section class="card"><h2>문항 지도 <small>막대가 높을수록 최고 배점</small></h2>${miniMap(e)}<div class="dl">${diffText(e.an.items)}</div></section>
         <section class="card"><h2>문항표</h2>${MODE === 'phone' ? `<div class="ilist">${e.an.items.map(i => `<div class="irow"><b>${i[0]}</b><span class="dchip d${i[2]}">${DIFF[i[2]]}</span><span class="it">${esc(strip(i[7] || i[6] || '—'))}</span><span class="ip">${i[1]}점</span></div>`).join('')}</div>` : itemTable(e)}</section>`;
     } else {
-      body = `<p class="callout">아직 문항 분석 전입니다. 4단계에서 대표 시험지를 AI가 읽어 문항표를 채우고, 원장님 검수 후 여기에 나타납니다.</p>`;
+      body = `<p class="callout">아직 문항 분석 전입니다. ${MODE === 'phone' ? 'PC나 아이패드의 ‘시험 등록’에서' : '아래 ‘이 시험 문항 분석하기’를 누르면'} AI가 시험지를 읽어 문항표를 채우고, 원장님 검수 후 여기에 나타납니다.</p>`;
     }
     return `${body}<section class="card"><h2>원본 파일</h2><div class="files">${filesHtml(e)}</div>${e.n.length ? `<div class="dl">메모: ${esc(e.n.join(' · '))}</div>` : ''}</section>`;
   }
   function examActions(e) {
-    if (!e.an) return '';
+    if (!e.an) return MODE === 'phone' ? '' : `<div class="actbar"><button type="button" class="btn" data-reg="${esc(e.id)}">이 시험 문항 분석하기</button>${D.drafts && D.drafts[e.id] ? `<button type="button" class="btn gold" data-draftopen="${esc(e.id)}">검수 대기 열기</button>` : ''}</div>`;
     return `<div class="actbar"><a class="btn" href="#output" data-out="${esc(e.id)}" data-fmt="simple">분석지 보기</a>
-      <a class="btn gold" href="#output" data-out="${esc(e.id)}" data-fmt="card">${MODE === 'phone' ? '카톡으로 보내기' : '카톡 카드 만들기'}</a></div>`;
+      <a class="btn gold" href="#output" data-out="${esc(e.id)}" data-fmt="card">${MODE === 'phone' ? '카톡으로 보내기' : '카톡 카드 만들기'}</a>
+      ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">문항표 고치기</button>`}</div>`;
   }
   function bindCommon(root) {
     $$('[data-copy]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); copyText(b, b.dataset.copy); });
     $$('[data-out]', root).forEach(a => a.onclick = () => { OUT.id = a.dataset.out; OUT.fmt = a.dataset.fmt; closeSheet(); });
+    $$('[data-reg]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); REG.pickExam(b.dataset.reg); });
+    $$('[data-edit]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); REG.editExam(b.dataset.edit); });
+    $$('[data-draftopen]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); location.hash = '#register'; });
   }
 
   function renderArchive() {
@@ -216,7 +228,7 @@ window.startApp = function (D, ctx) {
         <div class="tile"><span>등록 시험</span><b>${D.exams.length}건</b><span>${years[years.length - 1]}~${years[0]}년 · ${schools.length}개 학교</span></div>
         <div class="tile"><span>원본 시험지 있음</span><b>${D.exams.filter(e => e.p).length}건</b><span>정답·배점표까지 ${D.exams.filter(e => e.p && e.a).length}건</span></div>
         <div class="tile dark"><span>문항 분석 완료</span><b>${nAn}건</b><span>${nItems}문항 · 단원·유형까지 분류</span></div>
-        <div class="tile"><span>분석 기다리는 시험</span><b>${D.exams.filter(e => !e.an && e.p).length}건</b><span>4단계 AI 연결 후 자동 분류</span></div></div>`;
+        <div class="tile"><span>분석 기다리는 시험</span><b>${D.exams.filter(e => !e.an && e.p).length}건</b><span>${Object.keys(D.drafts || {}).length ? `검수 대기 ${Object.keys(D.drafts).length}건 · ` : ''}시험 등록에서 AI로 분석</span></div></div>`;
     if (MODE === 'tab') return archiveTab(rows);
     $('#main').innerHTML = `
       <div class="head"><div><div class="kicker">MYBOX '학교별 기출문제' 폴더를 시험 단위로 정리했습니다</div><h1>시험지 보관함</h1></div></div>
@@ -232,7 +244,7 @@ window.startApp = function (D, ctx) {
             <td class="sch">${esc(e.s)}</td><td class="num">${e.y}</td><td>${examLabel(e)}</td><td><div class="tags">${tags(e) || '<span class="tag">없음</span>'}</div></td>
             <td>${e.an ? diffBar(e.an.items) + `<div class="dl">${diffText(e.an.items)}</div>` : '<span class="dl">분석 전</span>'}</td><td>${stateOf(e)}</td></tr>
             ${open ? `<tr class="detail"><td colspan="6"><div class="det"><div><h2>원본 파일 <small>${esc(e.s)} ${e.y} ${examLabel(e)}</small></h2><div class="files">${filesHtml(e)}</div>${e.n.length ? `<div class="dl">메모: ${esc(e.n.join(' · '))}</div>` : ''}</div>
-              <div style="flex:3 1 520px"><div class="head"><h2>문항표</h2>${examActions(e)}</div>${e.an ? itemTable(e) + `<div class="dl">배점 합계 ${e.an.items.reduce((s, i) => s + i[1], 0)}점 · 체감 난이도 ${esc(e.an.level || '—')} · 서답형 ${e.an.essay}문항</div>` : '<div class="empty">아직 문항 분석 전입니다. 4단계에서 AI가 문항표를 채우고, 원장님 검수 후 여기에 나타납니다.</div>'}</div></div></td></tr>` : ''}`;
+              <div style="flex:3 1 520px"><div class="head"><h2>문항표</h2>${examActions(e)}</div>${e.an ? itemTable(e) + `<div class="dl">배점 합계 ${e.an.items.reduce((s, i) => s + i[1], 0)}점 · 체감 난이도 ${esc(e.an.level || '—')} · 서답형 ${e.an.essay}문항</div>` : `<div class="empty">아직 문항 분석 전입니다. ${D.drafts && D.drafts[e.id] ? 'AI가 읽은 문항표가 검수 대기 중입니다.' : '‘이 시험 문항 분석하기’를 누르면 AI가 문항표를 채웁니다.'}</div>`}</div></div></td></tr>` : ''}`;
         }).join('') || '<tr><td colspan="6" class="empty">조건에 맞는 시험이 없습니다. 필터를 하나 풀어 보세요.</td></tr>'}</tbody></table></div>
       ${rows.length > F.limit ? `<button type="button" class="more" id="more">${Math.min(40, rows.length - F.limit)}건 더 보기 (남은 ${rows.length - F.limit}건)</button>` : ''}`;
     const root = $('#main');
@@ -434,7 +446,9 @@ window.startApp = function (D, ctx) {
   }
 
   // ---------- 4. 분석지 만들기 ----------
-  const analyzedExams = D.exams.filter(e => e.an).sort((a, b) => b.y - a.y || a.s.localeCompare(b.s, 'ko') || a.g - b.g || a.t - b.t || (a.x === '기말') - (b.x === '기말'));
+  const analyzedExams = [];
+  function anRefresh() { analyzedExams.length = 0; analyzedExams.push(...D.exams.filter(e => e.an).sort((a, b) => b.y - a.y || a.s.localeCompare(b.s, 'ko') || a.g - b.g || a.t - b.t || (a.x === '기말') - (b.x === '기말'))); }
+  anRefresh();
   const OUT = Object.assign({ id: (analyzedExams[0] || {}).id, fmt: 'simple' }, store.get('output', {}));
   if (!byId[OUT.id] || !byId[OUT.id].an) OUT.id = (analyzedExams[0] || {}).id;
   const FMT = [['simple', '간결 분석지', 'A4 1장 · 학부모 기본형'], ['card', '카톡 카드', '휴대폰 화면 한 장'], ['detail', '상세 분석지', 'A4 2쪽 · 단원·비교까지']];
@@ -489,8 +503,31 @@ window.startApp = function (D, ctx) {
   }
 
   // ---------- 준비 중 ----------
+  // ---------- 5. 시험 등록 (4단계) ----------
+  function applySaved({ id, exam, analysis, newTypes }) {
+    const DI = { 기본: 1, 응용: 2, 실력: 3, 심화: 4 }, BI = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
+    (newTypes || []).forEach(t => D.catalog.push([t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']));
+    const idx = {}; D.catalog.forEach((c, i) => { idx[c[0]] = i; });
+    if (exam && !byId[id]) {
+      const e = { id, s: exam.school, m: exam.main ? 1 : 0, y: exam.year, g: exam.grade, t: exam.sem, x: exam.exam, p: 1, a: 0, sc: 0, r: 0, f: exam.formats, fl: [], pr: '', n: exam.notes };
+      D.exams.push(e); byId[id] = e;
+    }
+    A[id] = { level: analysis.level, cuts: analysis.cuts, essay: analysis.essay, source: analysis.source,
+      items: analysis.items.map(i => [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course, i.big, i.mid, i.type, idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0]) };
+    byId[id].an = A[id];
+    listsRefresh(); recRefresh(); anRefresh();
+    const sc = $('#sideCount'); if (sc) sc.textContent = `${D.exams.length}개 시험 · ${schools.length}개 학교`;
+  }
+  const REG = window.SudoRegister({
+    D, ctx, byId, A, REC, schools, years, esc, toast, $, $$, DIFF, BEH, ROLE, ROOT_WIN, MAIN4, short, applySaved,
+    mode: () => MODE,
+    go: v => { if ((location.hash || '#archive').slice(1) !== v) location.hash = '#' + v; },
+    openExam: id => { const e = byId[id]; F.school = e.s; F.course = '전체'; F.year = '전체'; F.exam = '전체'; F.state = '전체'; F.q = ''; F.open = id; saveF(); if (location.hash === '#archive') route(); else location.hash = '#archive'; },
+    diffBarCounts: c => `<div class="dbar" role="img" aria-label="기본 ${c[1]}, 응용 ${c[2]}, 실력 ${c[3]}, 심화 ${c[4]}">${[1, 2, 3, 4].filter(k => c[k]).map(k => `<i style="flex:${c[k]};background:var(--d${k})"></i>`).join('')}</div>`
+  });
+  window.addEventListener('beforeunload', ev => { if (REG.busy()) { ev.preventDefault(); ev.returnValue = ''; } });
+
   const SOON = {
-    register: ['시험 등록', '4단계', '직접 업로드하거나 MYBOX 폴더에서 시험지 PDF를 고르면, AI(Claude 또는 GPT)가 문항표를 채우고 원장님이 검수합니다.'],
     factory: ['문제 제작소', '5단계', '학교별 누적 분석을 바탕으로 기본 2회분, 추가 2회분까지 모의고사를 만듭니다.']
   };
   function renderSoon(v) {
@@ -502,14 +539,14 @@ window.startApp = function (D, ctx) {
   let lastView = null;
   function route() {
     let v = (location.hash || '#archive').slice(1) || 'archive';
-    if (MODE === 'phone' && SOON[v]) v = 'archive';
+    if (MODE === 'phone' && (SOON[v] || v === 'register')) v = 'archive';
     if (v !== 'school') consult = false;
     $$('[data-v]').forEach(a => { const on = a.dataset.v === v; a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-    if (v === 'school') renderSchool(); else if (v === 'types') renderTypes(); else if (v === 'output') renderOutput(); else if (SOON[v]) renderSoon(v); else renderArchive();
+    if (v === 'school') renderSchool(); else if (v === 'types') renderTypes(); else if (v === 'output') renderOutput(); else if (v === 'register') REG.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
     if (v !== lastView) window.scrollTo(0, 0);
     lastView = v;
   }
-  $('#sideNote').innerHTML = `${D.exams.length}개 시험 · ${schools.length}개 학교<br>데이터 기준일 ${esc(D.built)}`
+  $('#sideNote').innerHTML = `<span id="sideCount">${D.exams.length}개 시험 · ${schools.length}개 학교</span><br>데이터 기준일 ${esc(D.built)}`
     + (ctx ? `<br>${esc(ctx.user)} <button type="button" class="linkbtn" id="logout">로그아웃</button>` : '');
   if (ctx) $('#logout').onclick = () => ctx.signOut();
   window.addEventListener('hashchange', route);

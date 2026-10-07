@@ -30,8 +30,9 @@
 
   // Firestore 문서 → 화면이 쓰는 모양(D)
   async function load() {
-    const [ex, an, ty, meta] = await Promise.all([
-      db.collection('exams').get(), db.collection('analyses').get(), db.collection('types').get(), db.doc('meta/info').get()]);
+    const [ex, an, ty, meta, dr, ai] = await Promise.all([
+      db.collection('exams').get(), db.collection('analyses').get(), db.collection('types').get(), db.doc('meta/info').get(),
+      db.collection('drafts').get(), db.doc('meta/ai').get()]);
     if (ex.empty) return null;
     const types = ty.docs.map(d => d.data()).sort((a, b) =>
       a.course.localeCompare(b.course) || a.midNo.localeCompare(b.midNo) || a.typeNo.localeCompare(b.typeNo));
@@ -42,7 +43,7 @@
     an.docs.forEach(d => {
       const a = d.data();
       analyzed[d.id] = {
-        level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0,
+        level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,
         items: (a.items || []).map(i => [i.no, i.pts, DIFF[i.diff] || 0, BEH[i.beh] || '', i.course || '', i.big || '', i.mid || '', i.type || '',
           i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0])
       };
@@ -55,7 +56,8 @@
     });
     const m = meta.exists ? meta.data() : {};
     return { v: 1, built: m.built || '', root: m.root || '', exams, analyzed,
-      catalog: types.map(t => [t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']), predicted: m.predicted || [] };
+      catalog: types.map(t => [t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']), predicted: m.predicted || [],
+      drafts: Object.fromEntries(dr.docs.map(d => [d.id, d.data()])), ai: ai.exists ? ai.data() : null };
   }
 
   // 받은 데이터 파일(앱용 JSON)을 Firestore에 넣는다
@@ -106,7 +108,20 @@
     const ctx = {
       user: user.email,
       signOut: () => auth.signOut(),
-      saveTypeName: (code, name) => db.collection('types').doc(code).update({ name, editedAt: new Date().toISOString() })
+      saveTypeName: (code, name) => db.collection('types').doc(code).update({ name, editedAt: new Date().toISOString() }),
+      getToken: () => auth.currentUser.getIdToken(),
+      saveAI: s => db.doc('meta/ai').set(s),
+      saveDraft: (id, d) => db.collection('drafts').doc(id).set(d),
+      deleteDraft: id => db.collection('drafts').doc(id).delete(),
+      // 검수 끝난 문항표 저장: 새 유형 → 시험(새 시험이면) → 분석 → 임시본 지우기를 한 번에
+      saveAnalysis: async ({ id, exam, analysis, newTypes }) => {
+        const b = db.batch();
+        (newTypes || []).forEach(t => b.set(db.collection('types').doc(t.code), t));
+        if (exam) b.set(db.collection('exams').doc(id), exam, { merge: true });
+        b.set(db.collection('analyses').doc(id), analysis);
+        b.delete(db.collection('drafts').doc(id));
+        await b.commit();
+      }
     };
     if (!started) { started = true; window.startApp(D, ctx); }
     else location.reload();
