@@ -514,7 +514,12 @@ window.startApp = function (D, ctx) {
         bindKind(); return;
       }
       e = byId[OUT.sx]; sd = STU.reportData(OUT.sid, OUT.sx, OUT.avg); extra.student = sd;
-      if (noteFor !== OUT.sid + OUT.sx) { noteFor = OUT.sid + OUT.sx; NOTE.student = sd.name; NOTE.text = ''; }
+      if (noteFor !== OUT.sid + OUT.sx) {
+        noteFor = OUT.sid + OUT.sx; NOTE.student = sd.name;
+        const sv = (D.results[`${OUT.sid}_${OUT.sx}`] || {}).note;
+        NOTE.text = sv && sv.text ? sv.text : '';
+        if (NOTE.text) NOTE.on = true;
+      }
     } else {
       e = byId[OUT.id];
       if (noteFor && noteFor !== 'exam') { noteFor = 'exam'; NOTE.student = ''; NOTE.text = ''; }
@@ -548,7 +553,7 @@ window.startApp = function (D, ctx) {
             <label class="chk"><input type="checkbox" id="noteOn" ${NOTE.on ? 'checked' : ''}> <b>선생님 의견 넣기</b> <small>학생마다 따로</small></label>
             ${NOTE.on ? `<div class="noteform">
               <label class="nsel"><span>학생 이름</span><input id="noteStudent" value="${esc(NOTE.student)}" placeholder="예: 김민준 (비우면 표시 안 함)"></label>
-              <label class="nsel"><span>의견</span><textarea id="noteText" rows="5" placeholder="이번 시험에서 잘한 점, 아쉬운 점, 다음 시험까지 할 일">${esc(NOTE.text)}</textarea></label>
+              <label class="nsel"><span>의견${stu ? ' <small id="noteSaved" class="dl">학생·시험별로 자동 저장</small>' : ''}</span><textarea id="noteText" rows="5" placeholder="이번 시험에서 잘한 점, 아쉬운 점, 다음 시험까지 할 일">${esc(NOTE.text)}</textarea></label>
               <label class="nsel"><span>작성</span><input id="noteBy" value="${esc(NOTE.by)}" placeholder="예: 수학도서관 홍길동 선생님"></label>
               ${stu ? '' : '<button type="button" class="linkbtn" id="noteClear">다음 학생 (이름·의견 비우기)</button>'}
             </div>` : ''}
@@ -575,7 +580,18 @@ window.startApp = function (D, ctx) {
     const ld = $('#linkDays'); if (ld) ld.onchange = ev => { OUT.days = +ev.target.value; store.set('output', Object.assign(store.get('output', {}), { days: OUT.days })); };
     $('#noteOn').onchange = ev => { NOTE.on = ev.target.checked; saveNote(); renderOutput(); };
     const liveNote = () => { $$('#preview .rpt').forEach(r => { window.SudoReport.setNote(r, NOTE); window.SudoReport.fit(r); }); fitPreview(); };
-    [['#noteStudent', 'student'], ['#noteText', 'text'], ['#noteBy', 'by']].forEach(([sel, k]) => { const el = $(sel); if (el) el.oninput = () => { NOTE[k] = el.value.trim(); if (k === 'by') saveNote(); liveNote(); }; });
+    let noteT = null;
+    const saveStuNote = () => {
+      const rid = `${OUT.sid}_${OUT.sx}`, r = D.results[rid]; if (!stu || !r) return;
+      const ns = $('#noteSaved'); if (ns) ns.textContent = '저장하는 중…';
+      clearTimeout(noteT);
+      noteT = setTimeout(() => {
+        const doc = Object.assign({}, r, { note: { text: NOTE.text, by: NOTE.by, at: new Date().toISOString() } }); delete doc.id;
+        Promise.resolve(ctx ? ctx.saveResult(rid, doc) : 0).then(() => { D.results[rid] = Object.assign({ id: rid }, doc); const n2 = $('#noteSaved'); if (n2) n2.textContent = '저장됨'; },
+          err => { const n2 = $('#noteSaved'); if (n2) n2.textContent = '저장 실패: ' + err.message; });
+      }, 1200);
+    };
+    [['#noteStudent', 'student'], ['#noteText', 'text'], ['#noteBy', 'by']].forEach(([sel, k]) => { const el = $(sel); if (el) el.oninput = () => { NOTE[k] = el.value.trim(); if (k === 'by') saveNote(); if (k === 'text') saveStuNote(); liveNote(); }; });
     const nc = $('#noteClear'); if (nc) nc.onclick = () => { NOTE.student = ''; NOTE.text = ''; $('#noteStudent').value = ''; $('#noteText').value = ''; liveNote(); $('#noteStudent').focus(); };
     $$('.fmt').forEach(b => b.onclick = () => { OUT.fmt = b.dataset.fmt; renderOutput(); });
     if (OUT.sim && !SIMC[simKey]) runSim(simKey, e, sd);
@@ -597,7 +613,12 @@ window.startApp = function (D, ctx) {
       // 분석지를 지금 모습(고친 글 포함) 그대로 공개용 링크로 저장. 주소는 길고 무작위라 아는 사람만 열 수 있음
       const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789', rnd = crypto.getRandomValues(new Uint8Array(18));
       const id = [...rnd].map(x => a[x % a.length]).join('');
-      const html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); return c.outerHTML; });
+      let html;
+      if (stu) {
+        // 학생 링크는 휴대폰용 세로형 한 장으로 따로 만든다 (고친 '보완할 점' 글은 그대로)
+        const exp = new Date(Date.now() + OUT.days * 864e5), ymd = `${exp.getFullYear()}-${String(exp.getMonth() + 1).padStart(2, '0')}-${String(exp.getDate()).padStart(2, '0')}`;
+        html = [window.SudoReport.studentLink(e, NOTE, Object.assign({}, extra, { sim: OUT.sim ? (SIMC[simKey] || []) : undefined }), { fixes: window.SudoReport.readFixes($('#preview')), expires: ymd })];
+      } else html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); return c.outerHTML; });
       const title = `${stu ? sd.name + ' 학생 · ' : ''}${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석`;
       const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'r.html#' + id;
       const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, kind: stu ? 'student' : 'exam', createdAt: new Date().toISOString() }, stu ? +OUT.days : 0);

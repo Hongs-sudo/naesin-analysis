@@ -58,7 +58,7 @@
   }
   const legend = S => `<div style="display:flex;gap:14px;font-size:12px;color:${K.ink2};flex-wrap:wrap">${[1, 2, 3, 4].map(k =>
     `<span><b style="color:${DC[k]}">■</b> ${DIFF[k]} ${S.cnt[k]}문항</span>`).join('')}<span style="color:${K.mute}">· 막대가 높을수록 최고 배점</span></div>`;
-  const editable = (txt, tag = 'span', style = '') => `<${tag} contenteditable="true" spellcheck="false" style="${style};outline:none">${esc(txt)}</${tag}>`;
+  const editable = (txt, tag = 'span', style = '', attr = '') => `<${tag} contenteditable="true" spellcheck="false" ${attr} style="${style};outline:none">${esc(txt)}</${tag}>`;
 
   // ---------- 1. 간결 A4 ----------
   function simple(e, S) {
@@ -366,7 +366,7 @@
         ${sMap(e, C, 12, 3)}${legend({ cnt: (() => { const c = [0, 0, 0, 0, 0]; e.an.items.forEach(i => c[i[2]]++); return c; })() })}</section>
       <section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
         <div style="font-size:14px;font-weight:900">보완할 점 3가지</div>
-        ${st.fixes.map((f, k) => `<div style="display:grid;grid-template-columns:26px 1fr;gap:8px;font-size:12.5px;line-height:1.6"><b style="color:${K.gold};font-size:14px">0${k + 1}</b><span>${editable(f[0], 'b')} — ${editable(f[1])}</span></div>`).join('')}</section>
+        ${st.fixes.map((f, k) => `<div style="display:grid;grid-template-columns:26px 1fr;gap:8px;font-size:12.5px;line-height:1.6"><b style="color:${K.gold};font-size:14px">0${k + 1}</b><span>${editable(f[0], 'b', '', `data-fx-t="${k}"`)} — ${editable(f[1], 'span', '', `data-fx-b="${k}"`)}</span></div>`).join('')}</section>
 <!--SIM-->
 <!--NOTE-->
       ${sFoot('학생 분석지 · 1 / 1')}</div>`;
@@ -385,7 +385,7 @@
         ${C.units.length ? `<section style="background:#fff;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px"><b style="font-size:15px;color:${K.g}">어디서 점수를 잃었나요</b>
           ${C.units.slice(0, 3).map(([m, p]) => `<div><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(strip(m))}</span><b style="color:${K.gold}">-${Math.round(p * 10) / 10}점</b></div><div style="height:10px;border-radius:5px;background:#ECF1EF;overflow:hidden;margin-top:3px"><div style="height:100%;width:${Math.round(p / mx * 100)}%;background:${K.gold};border-radius:5px"></div></div></div>`).join('')}</section>` : ''}
         <section style="background:${K.g};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;color:#fff"><b style="font-size:15px;color:${K.gold2}">보완할 점</b>
-          ${st.fixes.map((f, k) => `<div style="display:flex;gap:10px;font-size:13.5px;line-height:1.55"><b style="color:${K.gold2}">0${k + 1}</b>${editable(f[0] + ' — ' + f[1])}</div>`).join('')}</section>
+          ${st.fixes.map((f, k) => `<div style="display:flex;gap:10px;font-size:13.5px;line-height:1.55"><b style="color:${K.gold2}">0${k + 1}</b>${editable(f[0] + ' — ' + f[1], 'span', '', `data-fx-tb="${k}"`)}</div>`).join('')}</section>
 <!--SIM-->
 <!--NOTE-->
         <div style="text-align:center;font-size:12px;color:${K.mute};padding:4px 0 6px">1:1 명품 맞춤 수학학원 · 수학도서관</div>
@@ -431,7 +431,7 @@
       <section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
         <div style="font-size:14px;font-weight:900">보완할 점 3가지</div>
         ${st.fixes.map((f, k) => `<div style="display:grid;grid-template-columns:30px 1fr;gap:10px;padding-bottom:8px;border-bottom:1px solid #ECF1EF"><b style="color:${K.gold};font-size:16px">0${k + 1}</b>
-          <div style="display:flex;flex-direction:column;gap:2px">${editable(f[0], 'b', `font-size:13px;color:${K.g}`)}${editable(f[1], 'span', `font-size:12px;line-height:1.6;color:${K.ink2}`)}${f[2] ? `<span style="font-size:11px;color:${K.mute}">${esc(f[2])}</span>` : ''}</div></div>`).join('')}</section>
+          <div style="display:flex;flex-direction:column;gap:2px">${editable(f[0], 'b', `font-size:13px;color:${K.g}`, `data-fx-t="${k}"`)}${editable(f[1], 'span', `font-size:12px;line-height:1.6;color:${K.ink2}`, `data-fx-b="${k}"`)}${f[2] ? `<span style="font-size:11px;color:${K.mute}">${esc(f[2])}</span>` : ''}</div></div>`).join('')}</section>
 <!--SIM-->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
@@ -442,6 +442,50 @@
 <!--NOTE2-->
       </div>
       ${sFoot('2 / 2')}</div>`;
+  }
+
+  // ---------- 학생 분석지 링크 (휴대폰 화면 가득, 세로형) ----------
+  // fixes: 미리보기에서 고친 글 [[제목, 내용]], expires: 'YYYY-MM-DD'
+  function sLink(e, st, note, opt) {
+    const C = st.C, A = st.avg, u = C.units[0], it = e.an.items, pick = st.res.pickOn ? (st.res.picks || {}) : {};
+    const card = (inner, extra) => `<section style="background:#fff;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;${extra || ''}">${inner}</section>`;
+    const h3 = (t, sm, col) => `<div style="font-size:15px;font-weight:900;color:${col || K.g}">${t}${sm ? ` <span style="font-size:11px;font-weight:400;color:${K.mute}">${sm}</span>` : ''}</div>`;
+    const row = i => { const l = C.lost[i[0]] || 0, w = l > 0;
+      return `<div style="display:grid;grid-template-columns:26px 40px minmax(0,1fr) 42px 34px;gap:6px;align-items:center;font-size:12.5px;padding:7px 6px;border-bottom:1px solid #ECF1EF;${w ? `background:#FBF5EA;box-shadow:inset 3px 0 0 ${K.gold};border-radius:4px` : ''}">
+        <b>${i[0]}</b><span style="font-size:10.5px;font-weight:700;padding:1px 0;border-radius:99px;text-align:center;background:${DC[i[2]]};color:${DT[i[2]]}">${DIFF[i[2]]}</span>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(strip(i[7]) || strip(i[6]))}</span><span style="color:${K.mute};text-align:right">${i[1]}점</span>
+        <span style="text-align:center;font-weight:900;color:${w ? K.gold : K.g2}">${w ? (l < i[1] ? '-' + l : (pick[i[0]] || '✕')) : '○'}</span></div>`; };
+    const wrongRows = it.filter(i => C.lost[i[0]] > 0);
+    const fx = opt.fixes || st.fixes;
+    return `<div class="rpt" data-w="390" style="width:390px;box-sizing:border-box;background:${K.cream};font-family:${FONT};color:${K.ink};display:flex;flex-direction:column">
+      <div style="background:${K.g};padding:22px 20px 20px;display:flex;flex-direction:column;gap:10px">
+        <img src="assets/logo-white.svg" alt="수학도서관" style="width:140px;height:auto;display:block">
+        <div><div style="font-size:12.5px;font-weight:700;color:${K.gold2}">${esc(short(e.s))}중 ${e.g}학년 ${e.t}학기 ${esc(e.x)} · 학생 분석</div>
+        <div style="font-size:24px;font-weight:900;color:#fff;line-height:1.3">${esc(st.name)} 학생<br>이번 시험 돌아보기</div></div></div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="border-radius:14px;padding:14px 16px;background:${K.g};color:#fff;display:flex;flex-direction:column"><span style="font-size:12px;opacity:.85">이번 점수</span><b style="font-size:28px;font-weight:900">${C.score}점</b><span style="font-size:12px;opacity:.85">${A ? `학원생 평균 ${A.score}점 · ${A.n}명` : `${C.total}점 만점`}</span></div>
+          <div style="border-radius:14px;padding:14px 16px;background:${K.goldSoft};color:${K.goldFg};display:flex;flex-direction:column"><span style="font-size:12px">틀린 문항</span><b style="font-size:28px;font-weight:900">${C.wrongNos.length}개</b><span style="font-size:12px">${C.wrongNos.length ? C.wrongNos.join('·') + '번' : '없음'}</span></div></div>
+        ${card(h3('난이도별 맞힌 비율', A ? '진한 막대 = 학생 · 회색 = 학원생 평균' : '') + [1, 2, 3, 4].filter(d => C.rate[d] !== null).map(d => `<div style="display:grid;grid-template-columns:34px 1fr 40px;gap:8px;align-items:center;font-size:13px"><b>${DIFF[d]}</b>
+          <div style="display:flex;flex-direction:column;gap:2px"><div style="height:10px;border-radius:5px;background:#ECF1EF;overflow:hidden"><div style="height:100%;width:${C.rate[d]}%;background:${DC[d]}"></div></div>${A && A.rate[d] !== null && A.rate[d] !== undefined ? `<div style="height:4px;border-radius:2px;background:#ECF1EF;overflow:hidden"><div style="height:100%;width:${A.rate[d]}%;background:#B9C6C1"></div></div>` : ''}</div><span style="text-align:right">${C.rate[d]}%</span></div>`).join(''))}
+        ${card(`<span style="font-size:12px;font-weight:700">가장 많이 잃은 단원</span><b style="font-size:20px;font-weight:900;line-height:1.3">${u ? esc(strip(u[0])) : '없음'}</b><span style="font-size:12.5px">${u ? `${Math.round(u[1] * 10) / 10}점 손실 · ${it.filter(i => i[6] === u[0] && C.lost[i[0]] > 0).map(i => i[0]).join('·')}번` : '틀린 문항이 없습니다'}</span>`, `background:${K.goldSoft};color:${K.goldFg};gap:4px`)}
+        ${card(h3('문항별 결과', '금색 줄 = 틀린 문항') + (wrongRows.length ? `<div style="font-size:12px;font-weight:700;color:${K.goldFg}">틀린 문항 ${wrongRows.length}개</div>${wrongRows.map(row).join('')}` : `<div style="font-size:13px;color:${K.mute}">틀린 문항이 없습니다.</div>`)
+          + `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:13.5px;font-weight:700;color:${K.g};padding:10px 12px;border:1px solid ${K.line};border-radius:10px;text-align:center;list-style:none">전체 문항 보기 (${it.length}문항) ▾</summary><div style="margin-top:8px">${it.map(row).join('')}</div></details>`)}
+        ${card(h3('보완할 점', '', K.gold2) + fx.map((f, k) => `<div style="display:flex;gap:10px;font-size:14px;line-height:1.6;color:#fff"><b style="color:${K.gold2}">0${k + 1}</b><span><b>${esc(f[0])}</b>${f[1] ? ' — ' + esc(f[1]) : ''}</span></div>`).join(''), `background:${K.g}`)}
+        ${simBox(opt.sim, { on: opt.simOn, small: true, lab: '틀린', title: '다시 풀어 볼 비슷한 문제', sub: '틀린 문항 기준' })}
+        ${noteBox(note, true)}
+        <div style="text-align:center;font-size:12px;color:${K.mute};padding:4px 0 10px;line-height:1.7">1:1 명품 맞춤 수학학원 · 수학도서관${opt.expires ? `<br>이 링크는 ${esc(opt.expires)}까지 열립니다` : ''}</div>
+      </div></div>`;
+  }
+  // 미리보기에서 고친 '보완할 점' 글 읽기
+  function readFixes(root, n) {
+    const out = [];
+    for (let k = 0; k < (n || 3); k++) {
+      const t = root.querySelector(`[data-fx-t="${k}"]`), b = root.querySelector(`[data-fx-b="${k}"]`), tb = root.querySelector(`[data-fx-tb="${k}"]`);
+      if (t) out.push([t.textContent.trim(), b ? b.textContent.trim() : '']);
+      else if (tb) { const v = tb.textContent.trim(), i = v.indexOf(' — '); out.push(i >= 0 ? [v.slice(0, i), v.slice(i + 3)] : [v, '']); }
+    }
+    return out.length ? out : null;
   }
 
   // ---------- 이미지 만들기 ----------
@@ -541,7 +585,11 @@
       if (format === 'detail') return [detail1(e, S), put(detail2(e, S, ctx), false, '이번', 110)].map(wrapA4);
       return [put(simple(e, S), false, '이번', 104)].map(wrapA4);
     },
-    studentCalc, studentFixes,
+    studentCalc, studentFixes, readFixes,
+    studentLink(e, note, extra, opt) {
+      const st = Object.assign({}, extra.student); st.C = studentCalc(e, st.res); st.fixes = studentFixes(e, st.C, st.res, st.avg);
+      return sLink(e, st, note, Object.assign({ sim: extra.sim, simOn: extra.simOn }, opt || {}));
+    },
     setNote,
     fit,
     copyImage, shareImage, saveImage

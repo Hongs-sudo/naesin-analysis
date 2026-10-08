@@ -149,6 +149,7 @@ window.SudoStudents = function (H) {
       const res = { wrong: W.wrong, picks: W.picks, partial: W.partial, pickOn: S.pickOn };
       const C = window.SudoReport.studentCalc(e, res);
       const doc = { student: st.id, exam: e.id, wrong: W.wrong.slice(), picks: Object.assign({}, W.picks), partial: Object.assign({}, W.partial), pickOn: S.pickOn, score: C.score, total: C.total, at: now() };
+      const old = D.results[W.id]; if (old && old.note) doc.note = old.note;
       if (ctx) await ctx.saveResult(W.id, doc);
       D.results[W.id] = Object.assign({ id: W.id }, doc); W.saved = true;
       return doc;
