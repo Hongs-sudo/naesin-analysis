@@ -589,3 +589,11 @@ body[data-mode="phone"] .job .dl { display: none }
   .pgwrap:last-child { break-after: auto }
   .rpt[data-a4] { zoom: .995 }
 }
+/* 인쇄: 배경색(막대·색 칸) 항상 찍기, 한 쪽이 A4를 넘쳐 빈 장이 생기지 않게 */
+@media print {
+  .rpt, .rpt * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important }
+  .preview { display: block !important; gap: 0 !important }
+  .pgwrap { break-after: page; break-inside: avoid; margin: 0 !important; padding: 0 !important; height: 296mm; overflow: hidden }
+  .pgwrap:last-child { break-after: auto }
+  .rpt[data-a4] { zoom: .995 }
+}
