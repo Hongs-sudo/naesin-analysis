@@ -183,6 +183,7 @@ window.SudoRegister = function (H) {
     </div>${m.school && byId[idOf(m)] ? '<p class="dl">보관함에 이미 있는 시험입니다. 저장하면 그 시험에 문항표가 붙습니다.</p>' : ''}`;
   }
   function aiCard() {
+    if (ctx && ctx.can && !ctx.can.aiSettings) return `<section class="card aicard"><h2>AI ${R.ai.url ? '<span class="pill ok">연결됨</span>' : '<span class="pill warn">원장님 설정 전</span>'}</h2><p class="dl" id="quotaLine">이번 달 AI 사용량을 확인하는 중…</p></section>`;
     const P = window.SudoAI.MODELS;
     return `<section class="card aicard"><h2>AI 연결 ${R.ai.url ? '<span class="pill ok">설정됨</span>' : '<span class="pill warn">설정 전</span>'}</h2>
       <details ${R.ai.url ? '' : 'open'}><summary>${R.ai.url ? esc(modelLabel()) + ' · 바꾸기' : '처음 한 번 설정하기'}</summary>
@@ -224,6 +225,7 @@ window.SudoRegister = function (H) {
     const ca = $('#cancelAI'); if (ca) ca.onclick = () => { if (R.busy && R.busy.ctrl) R.busy.ctrl.abort(); };
     $$('[data-draft]').forEach(b => b.onclick = () => openDraft(JSON.parse(JSON.stringify(D.drafts[b.dataset.draft]))));
     bindAI(); bindTabs();
+    const ql = $('#quotaLine'); if (ql) quotaLeft().then(q => { ql.textContent = q.limit === Infinity || q.limit === undefined ? 'AI 사용 제한 없음' : `이번 달 AI 사용 ${q.used}/${q.limit}건 (시험지 한 건 읽기 = 1건)`; });
   }
   function bindTabs() { $$('[data-tab]').forEach(b => b.onclick = () => { R.tab = b.dataset.tab; render(); }); }
   function addFiles(list) {
@@ -262,9 +264,13 @@ window.SudoRegister = function (H) {
     };
   }
 
+  // AI 사용 한도 (원장님 외 관리자는 한 달 기본 30건)
+  async function quotaLeft() { try { return ctx && ctx.quota ? await ctx.quota() : { left: Infinity }; } catch (_) { return { left: Infinity }; } }
+  const useOne = () => { if (ctx && ctx.addUsage) ctx.addUsage(1); };
   async function runAI() {
     const m = currentMeta(); if (!m) return;
     if (!R.files.length) { toast('시험지 파일을 먼저 넣어 주세요'); return; }
+    const q = await quotaLeft(); if (q.left < 1) { toast(`이번 달 AI 사용 한도(${q.limit}건)를 다 썼습니다. 원장님께 한도를 늘려 달라고 요청해 주세요`); return; }
     const ctrl = new AbortController(), t0 = Date.now();
     R.busy = { label: `${modelLabel()}가 시험지를 읽고 있습니다`, sub: '0초', ctrl };
     render();
@@ -278,9 +284,12 @@ window.SudoRegister = function (H) {
       const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), withAns: R.withAns }, rowsFromAI(result, course));
       d.warnings = result.warnings || [];
       if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
+      const snapped = window.SudoPages.snap(d.rows, pages, 0);
+      if (snapped) d.warnings.push(`문항 영역 ${snapped}개는 PDF 글자 위치로 정확히 맞췄습니다`);
       const imgs = cropRows(d.rows, pages, d.id);
       R.files = []; R.pages = pages;
       try { if (ctx) await ctx.saveImgs(imgs); } catch (_) { d.warnings.push('문항 그림 일부를 저장하지 못했습니다. 저장할 때 다시 시도합니다'); d.pendingImgs = 1; }
+      useOne();
       try { await saveDraftRemote(d); } catch (_) {}
       openDraft(d, true);
     } catch (e) {
@@ -327,7 +336,7 @@ window.SudoRegister = function (H) {
       <div class="tablewrap rvwrap"><table class="rvtbl">
         <thead><tr><th>그림</th><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
         <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id, showAns)).join('')}</tbody></table></div>
-      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${R.pages ? '' : `<label class="btn ghost sm" for="rvPages">시험지 파일 다시 열기 <small>문항 영역 고칠 때</small></label><input type="file" id="rvPages" accept="${ACCEPT}" multiple hidden>`}${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
+      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${R.pages ? '' : `<label class="btn ghost sm" for="rvPages">시험지 파일 다시 열기 <small>문항 영역 고칠 때</small></label><input type="file" id="rvPages" accept="${ACCEPT}" multiple hidden>`}${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}${R.pages ? '<button type="button" class="btn ghost sm" id="rvSnap">글자 위치로 다시 맞추기</button>' : ''}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
     bindReview();
   }
   function rowHtml(r, i, course, mids, selfId, showAns) {
@@ -368,6 +377,14 @@ window.SudoRegister = function (H) {
       catch (e) { toast(e.message); }
     };
     loadThumbs();
+    const sn = $('#rvSnap'); if (sn) sn.onclick = async () => {
+      const list = d.rows.filter(r => r.boxSrc !== 'manual');
+      const hit = window.SudoPages.snap(list, R.pages, 0);
+      if (!hit) { toast('글자 위치를 찾지 못했습니다 (사진·스캔본이면 영역을 직접 고쳐 주세요)'); return; }
+      const imgs = cropRows(list.filter(r => r.boxSrc === 'text'), R.pages, d.id);
+      try { if (ctx) await ctx.saveImgs(imgs); else Object.assign(H.imgCache || {}, imgs); } catch (e) { toast('그림 저장 실패: ' + e.message); }
+      touch(true); toast(`${hit}문항을 글자 위치로 맞췄습니다`);
+    };
     $('#rvAdd').onclick = () => { d.rows.push(emptyRow((d.rows.reduce((m, r) => Math.max(m, +r.no || 0), 0)) + 1)); touch(true); };
     $$('.rvtbl tbody tr').forEach(tr => {
       const r = d.rows[+tr.dataset.i];
@@ -403,8 +420,9 @@ window.SudoRegister = function (H) {
       $('[data-del]', tr).onclick = () => { d.rows.splice(+tr.dataset.i, 1); touch(true); };
       const zb = $('[data-zoom]', tr); if (zb) zb.onclick = () => window.SudoPages.zoom($('img', zb).src, `${r.no}번 문항`);
       const rb = $('[data-rebox]', tr); if (rb) rb.onclick = async () => {
-        const res = await window.SudoPages.pickBox(R.pages, r.pg || 1, r.box); if (!res) return;
-        r.pg = res.pg; r.box = res.box;
+        const others = d.rows.filter(o => o !== r && o.box).map(o => ({ pg: o.pg, box: o.box, label: o.no }));
+        const res = await window.SudoPages.pickBox(R.pages, r.pg || 1, r.box, others); if (!res) return;
+        r.pg = res.pg; r.box = res.box; r.boxSrc = 'manual';
         const img = window.SudoPages.crop(R.pages[res.pg - 1], res.box); if (!img) { toast('영역이 너무 작습니다'); return; }
         r.ik = `e_${d.id}_${r.no}`;
         try { if (ctx) await ctx.saveImgs({ [r.ik]: img }); else (H.imgCache || {})[r.ik] = img; mark(); touch(true); toast('문항 그림을 바꿨습니다'); }
@@ -599,6 +617,9 @@ window.SudoRegister = function (H) {
   }
   const prePaint = () => { if ((location.hash || '').startsWith('#register') && !R.draft && R.tab === 'pre') render(); };
   async function runPre(list, keep) {
+    const q = await quotaLeft();
+    if (q.left < 1) { toast(`이번 달 AI 사용 한도(${q.limit}건)를 다 썼습니다`); return; }
+    if (list.length > q.left) { toast(`이번 달 남은 한도 ${q.left}건까지만 읽습니다`); list = list.slice(0, q.left); }
     if (!keep) P.list = list;
     P.running = true; P.stop = false; render();
     let next = 0;
@@ -617,6 +638,7 @@ window.SudoRegister = function (H) {
           const { result, usage } = await window.SudoAI.analyze({ settings, getToken: ctx.getToken, pages, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), withAns });
           P.usage.in += usage.in; P.usage.out += usage.out; P.usage.n++;
           const rows = rowsFromAI(result, course);
+          window.SudoPages.snap(rows, pages, 0);
           const imgs = cropRows(rows, pages, j.e.id);
           const secs = Math.round((Date.now() - t0) / 1000);
           let analysis;
@@ -640,6 +662,7 @@ window.SudoRegister = function (H) {
             j.final = true; j.msg = `${rows.length}문항 · 확인 ${rows.filter(r => !r.ok).length}개 · ${secs}초`;
           }
           if (ctx) await ctx.saveAnalysis({ id: j.e.id, analysis, imgs });
+          useOne();
           H.applySaved({ id: j.e.id, analysis });
           j.st = 'done'; j.secs = secs;
         } catch (e) { j.final = true; j.st = 'fail'; j.msg = String(e.message || e).slice(0, 60); }

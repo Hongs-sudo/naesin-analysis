@@ -115,7 +115,7 @@ window.SudoStudents = function (H) {
   }
 
   function bind() {
-    $('#stNew').onclick = () => { S.form = { school: S.school || (S.sel && D.students[S.sel] ? D.students[S.sel].school : ''), grade: S.grade || 2 }; render(); };
+    $('#stNew').onclick = () => { const me = ctx && ctx.me; S.form = { school: S.school || (S.sel && D.students[S.sel] ? D.students[S.sel].school : '') || (me && me.schools && me.schools[0]) || '', grade: S.grade || (me && me.grades && me.grades[0]) || 2, teacher: me && me.role !== 'owner' ? me.name || '' : '' }; render(); };
     $('#stSchool').onchange = ev => { S.school = ev.target.value; keep(); render(); };
     $('#stGrade').onchange = ev => { S.grade = ev.target.value; keep(); render(); };
     let t; $('#stQ').oninput = ev => { clearTimeout(t); t = setTimeout(() => { S.q = ev.target.value; render(); const n = $('#stQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
@@ -148,7 +148,7 @@ window.SudoStudents = function (H) {
     const save = async () => {
       const res = { wrong: W.wrong, picks: W.picks, partial: W.partial, pickOn: S.pickOn };
       const C = window.SudoReport.studentCalc(e, res);
-      const doc = { student: st.id, exam: e.id, wrong: W.wrong.slice(), picks: Object.assign({}, W.picks), partial: Object.assign({}, W.partial), pickOn: S.pickOn, score: C.score, total: C.total, at: now() };
+      const doc = { owner: st.owner || (ctx && ctx.me ? ctx.me.email : ''), student: st.id, exam: e.id, wrong: W.wrong.slice(), picks: Object.assign({}, W.picks), partial: Object.assign({}, W.partial), pickOn: S.pickOn, score: C.score, total: C.total, at: now() };
       const old = D.results[W.id]; if (old && old.note) doc.note = old.note;
       if (ctx) await ctx.saveResult(W.id, doc);
       D.results[W.id] = Object.assign({ id: W.id }, doc); W.saved = true;
@@ -180,7 +180,7 @@ window.SudoStudents = function (H) {
         let last = null;
         for (const name of names) {
           const id = f.id || ('s' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
-          const doc = { name, school: f.school, grade: f.grade, cls: f.cls || '', teacher: f.teacher || '', addedAt: f.addedAt || now(), editedAt: now() };
+          const doc = { name, school: f.school, grade: f.grade, cls: f.cls || '', teacher: f.teacher || '', addedAt: f.addedAt || now(), editedAt: now(), owner: f.owner || (ctx && ctx.me ? ctx.me.email : '') };
           if (ctx) await ctx.saveStudent(id, doc);
           D.students[id] = Object.assign({ id }, doc); last = id;
         }

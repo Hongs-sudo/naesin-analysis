@@ -34,11 +34,15 @@
   }
 
   // Firestore 문서 → 화면이 쓰는 모양(D)
-  async function load() {
-    const [ex, an, ty, meta, dr, ai, mat, stu, res, sts] = await Promise.all([
-      db.collection('exams').get(), db.collection('analyses').get(), db.collection('types').get(), db.doc('meta/info').get(),
-      db.collection('drafts').get(), db.doc('meta/ai').get(),
-      db.collection('materials').get(), db.collection('students').get(), db.collection('results').get(), db.collection('stats').get()]);
+  // me: {email, role: owner|co|admin|teacher}. 선생님은 자기 학생·결과만 읽는다 (보안 규칙도 같음)
+  async function load(me) {
+    const admin = me.role !== 'teacher';
+    const empty = { docs: [], empty: true }, none = { exists: false };
+    const mine = c => admin ? db.collection(c).get() : db.collection(c).where('owner', '==', me.email).get();
+    const [ex, an, ty, meta, dr, ai, mat, stu, res] = await Promise.all([
+      db.collection('exams').get(), db.collection('analyses').get(), db.collection('types').get(), db.doc('meta/info').get().catch(() => none),
+      admin ? db.collection('drafts').get() : empty, db.doc('meta/ai').get().catch(() => none),
+      db.collection('materials').get(), mine('students'), mine('results')]);
     if (ex.empty) return null;
     const types = ty.docs.map(d => d.data()).sort((a, b) =>
       a.course.localeCompare(b.course) || a.midNo.localeCompare(b.midNo) || a.typeNo.localeCompare(b.typeNo));
@@ -56,7 +60,7 @@
     return { v: 1, built: m.built || '', root: m.root || '', exams, analyzed,
       catalog: types.map(t => [t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']), predicted: m.predicted || [],
       drafts: Object.fromEntries(dr.docs.map(d => [d.id, d.data()])), ai: ai.exists ? ai.data() : null,
-      materials: byId(mat), students: byId(stu), results: byId(res), stats: Object.fromEntries(sts.docs.map(d => [d.id, d.data()])) };
+      materials: byId(mat), students: byId(stu), results: byId(res) };
   }
 
   // 받은 데이터 파일(앱용 JSON)을 Firestore에 넣는다
@@ -95,15 +99,27 @@
     };
   }
 
+  const OWNER = 'ilmvm66@gmail.com';
+  async function whoami(user) {
+    const email = (user.email || '').toLowerCase();
+    if (email === OWNER) return { email, name: '원장', role: 'owner', aiLimit: null };
+    const m = await db.collection('members').doc(email).get().catch(() => null);
+    if (!m || !m.exists || !m.data().active) return null;
+    db.collection('members').doc(email).update({ lastAt: new Date().toISOString() }).catch(() => {});
+    return Object.assign({ email }, m.data());
+  }
   async function boot(user) {
     screen('<p class="dl">불러오는 중…</p>');
-    let D;
-    try { D = await load(); }
-    catch (e) {
-      if (e.code === 'permission-denied') return loginScreen(`${user.email} 계정에는 볼 수 있는 권한이 없습니다. 원장님 계정으로 로그인해 주세요.`);
+    let D, me;
+    try {
+      me = await whoami(user);
+      if (!me) return loginScreen(`${user.email} 계정은 아직 등록되지 않았습니다. 원장님께 '선생님 관리'에서 이 Google 계정을 초대해 달라고 요청해 주세요.`);
+      D = await load(me);
+    } catch (e) {
+      if (e.code === 'permission-denied') return loginScreen(`${user.email} 계정에는 볼 수 있는 권한이 없습니다. 원장님께 확인해 주세요.`);
       return screen(`<p>데이터를 불러오지 못했습니다: ${esc(e.message)}</p>`);
     }
-    if (!D) return importScreen(user);
+    if (!D) return me.role === 'owner' ? importScreen(user) : screen('<p>아직 저장된 시험이 없습니다. 원장님이 데이터를 먼저 넣어야 합니다.</p>');
     const now = () => new Date().toISOString();
     const IMG = {};   // 문항 그림 (data URL) 기억해 두기
     const strip = o => JSON.parse(JSON.stringify(o));  // undefined 값 빼기 (Firestore가 거부함)
@@ -115,8 +131,30 @@
         await b.commit();
       }
     }
+    const month = () => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`; };
+    const usageRef = (email, mo) => db.collection('usage').doc(mo || month()).collection('by').doc(email);
+    const stamp = d => Object.assign({}, d, { owner: d.owner || me.email, by: me.email });
     const ctx = {
-      user: user.email,
+      user: user.email, me,
+      // 권한: owner·co(원장·원장 공동) > admin(관리자) > teacher(선생님: 담당 학생 · 학생 분석지만)
+      can: {
+        school: me.role !== 'teacher', register: me.role !== 'teacher', library: me.role !== 'teacher', types: me.role !== 'teacher',
+        members: me.role === 'owner' || me.role === 'co', grantCo: me.role === 'owner', remove: me.role === 'owner' || me.role === 'co',
+        allStudents: me.role !== 'teacher', aiSettings: me.role === 'owner' || me.role === 'co'
+      },
+      // ---- 선생님 관리 ----
+      listMembers: () => db.collection('members').get().then(s => s.docs.map(d => Object.assign({ email: d.id }, d.data()))),
+      saveMember: (email, d) => db.collection('members').doc(email.toLowerCase()).set(strip(d), { merge: true }),
+      deleteMember: email => db.collection('members').doc(email).delete(),
+      usageAll: mo => db.collection('usage').doc(mo || month()).collection('by').get().then(s => Object.fromEntries(s.docs.map(d => [d.id, d.data().n || 0]))),
+      // ---- AI 사용 한도 (원장은 제한 없음) ----
+      quota: async () => {
+        if (me.role === 'owner') return { used: 0, limit: Infinity, left: Infinity };
+        const s = await usageRef(me.email).get().catch(() => null);
+        const used = s && s.exists ? s.data().n || 0 : 0, limit = typeof me.aiLimit === 'number' ? me.aiLimit : 30;
+        return { used, limit, left: Math.max(0, limit - used) };
+      },
+      addUsage: n => me.role === 'owner' ? Promise.resolve() : usageRef(me.email).set({ n: firebase.firestore.FieldValue.increment(n || 1), at: new Date().toISOString() }, { merge: true }).catch(() => {}),
       signOut: () => auth.signOut(),
       // 공개 링크. days를 주면 그 날짜가 지나면 열리지 않음 (학생 분석지)
       shareReport: (id, data, days) => db.collection('shared').doc(id).set(Object.assign({}, data,
@@ -128,6 +166,7 @@
       deleteDraft: id => db.collection('drafts').doc(id).delete(),
       // 문항표 저장: 그림 → 새 유형 → 시험(새 시험이면) → 분석 → 임시본 지우기
       saveAnalysis: async ({ id, exam, analysis, newTypes, imgs }) => {
+        analysis = Object.assign({}, analysis, { source: Object.assign({}, analysis.source || {}, { by: me.email }) });
         await putImgs(imgs);
         const b = db.batch();
         (newTypes || []).forEach(t => b.set(db.collection('types').doc(t.code), t));
@@ -158,14 +197,12 @@
         for (let k = 0; k < (keys || []).length; k += 400) { const b = db.batch(); keys.slice(k, k + 400).forEach(x => b.delete(db.collection('img').doc(x))); await b.commit(); }
         await db.collection('materials').doc(id).delete();
       },
-      saveStudent: (id, d) => db.collection('students').doc(id).set(strip(d)),
+      saveStudent: (id, d) => db.collection('students').doc(id).set(strip(stamp(d))),
       deleteStudent: async (id, resultIds) => {
         const b = db.batch(); (resultIds || []).forEach(r => b.delete(db.collection('results').doc(r))); b.delete(db.collection('students').doc(id)); await b.commit();
       },
-      saveResult: (id, d) => db.collection('results').doc(id).set(strip(d)),
+      saveResult: (id, d) => db.collection('results').doc(id).set(strip(stamp(d))),
       // 학교 성적 자료 (학교알리미 학기 자료 또는 학교 발표 시험 자료) — 시험 id별
-      saveStats: (id, d) => db.collection('stats').doc(id).set(strip(d)),
-      deleteStats: id => db.collection('stats').doc(id).delete(),
       deleteResult: id => db.collection('results').doc(id).delete(),
       getSimilar: key => db.collection('similar').doc(key).get().then(s => s.exists ? s.data() : null, () => null),
       saveSimilar: (key, d) => db.collection('similar').doc(key).set(strip(d)).catch(() => {})

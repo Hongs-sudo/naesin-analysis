@@ -239,7 +239,7 @@ window.startApp = function (D, ctx) {
     return `<div class="actbar"><a class="btn" href="#output" data-out="${esc(e.id)}" data-fmt="simple">분석지 보기</a>
       <a class="btn gold" href="#output" data-out="${esc(e.id)}" data-fmt="card">${MODE === 'phone' ? '카톡으로 보내기' : '카톡 카드 만들기'}</a>
       ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">${e.an.status === 'ai' ? '지금 검수하기' : '문항표 고치기'}</button>`}
-      ${ctx ? `<button type="button" class="btn ghost" data-stats="${esc(e.id)}">학교 성적 자료${e.st ? ' ✓' : ''}</button>` : ''}</div>`;
+      ${ctx && CAN.school ? `<button type="button" class="btn ghost" data-stats="${esc(e.id)}">학교 성적 자료${e.st ? ' ✓' : ''}</button>` : ''}</div>`;
   }
   function bindCommon(root) {
     $$('[data-copy]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); copyText(b, b.dataset.copy); });
@@ -705,6 +705,7 @@ window.startApp = function (D, ctx) {
     const pr = $('#printIt'); if (pr) pr.onclick = G(() => { document.body.classList.add('printing'); window.print(); setTimeout(() => document.body.classList.remove('printing'), 500); });
   }
   function kindTabs() {
+    if (!CAN.school) return '';
     return `<div class="segx" role="tablist" aria-label="분석지 종류"><button type="button" role="tab" data-kind="exam" aria-selected="${OUT.kind !== 'student'}">학교 시험 분석지</button><button type="button" role="tab" data-kind="student" aria-selected="${OUT.kind === 'student'}">학생 분석지</button></div>`;
   }
   function bindKind() { $$('[data-kind]').forEach(b => b.onclick = () => { OUT.kind = b.dataset.kind; renderOutput(); }); }
@@ -768,6 +769,15 @@ window.startApp = function (D, ctx) {
   SIM = window.SudoSimilar(H2);
   const LIB = window.SudoLibrary(H2);
   const STU = window.SudoStudents(H2);
+  const MB = window.SudoMembers(H2);
+  // 권한별로 보이는 화면
+  const ROLEN = { owner: '원장', co: '원장(공동)', admin: '관리자', teacher: '선생님' };
+  const CAN = (ctx && ctx.can) || { school: true, register: true, library: true, types: true, members: false, remove: true, allStudents: true, aiSettings: true };
+  const ME = (ctx && ctx.me) || { role: 'owner', name: '원장' };
+  const VIEWS = CAN.school ? ['archive', 'school', 'types', 'library', 'students', 'output', 'register', 'factory'].concat(CAN.members ? ['members'] : []) : ['students', 'output'];
+  $$('[data-v]').forEach(a => { if (!VIEWS.includes(a.dataset.v)) a.style.display = 'none'; });
+  if (!CAN.school) OUT.kind = 'student';
+  if (!NOTE.by && ME.role !== 'owner' && ME.name) NOTE.by = `수학도서관 ${ME.name} 선생님`;
   window.addEventListener('beforeunload', ev => { if (REG.busy() || LIB.busy()) { ev.preventDefault(); ev.returnValue = ''; } });
 
   const SOON = {
@@ -781,17 +791,18 @@ window.startApp = function (D, ctx) {
   // ---------- 라우팅 ----------
   let lastView = null;
   function route() {
-    let v = (location.hash || '#archive').slice(1) || 'archive';
+    let v = (location.hash || '').slice(1) || VIEWS[0];
+    if (!VIEWS.includes(v)) v = VIEWS[0];
     if (MODE === 'phone' && (SOON[v] || v === 'register' || v === 'library')) v = 'archive';
     if (v !== 'school') consult = false;
     $$('[data-v]').forEach(a => { const on = a.dataset.v === v; a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     if (v === 'school') renderSchool(); else if (v === 'types') renderTypes(); else if (v === 'output') renderOutput(); else if (v === 'register') REG.render();
-    else if (v === 'library') LIB.render(); else if (v === 'students') STU.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
+    else if (v === 'library') LIB.render(); else if (v === 'students') STU.render(); else if (v === 'members') MB.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
     if (v !== lastView) window.scrollTo(0, 0);
     lastView = v;
   }
   $('#sideNote').innerHTML = `<span id="sideCount">${D.exams.length}개 시험 · ${schools.length}개 학교</span><br>데이터 기준일 ${esc(D.built)}`
-    + (ctx ? `<br>${esc(ctx.user)} <button type="button" class="linkbtn" id="logout">로그아웃</button>` : '');
+    + (ctx ? `<br>${esc(ctx.user)} <span class="rolechip">${ROLEN[ME.role] || ''}</span> <button type="button" class="linkbtn" id="logout">로그아웃</button>` : '');
   if (ctx) $('#logout').onclick = () => ctx.signOut();
   // PC·안드로이드 크롬/엣지: '앱으로 설치' 버튼
   function installBtn() {

@@ -1,5 +1,5 @@
 // 수도 내신분석 — AI 중계 Worker (Cloudflare)
-// 원장님 Google 계정(Firebase 로그인)으로 들어온 요청만 받아서
+// 원장님 또는 '선생님 관리'에 등록된 분의 Google 계정(Firebase 로그인)으로 들어온 요청만 받아서
 // Claude 또는 GPT로 그대로 넘겨 줍니다. API 키는 이 Worker의 '비밀 값'에만 있고
 // 화면(GitHub Pages) 쪽에는 절대 내려가지 않습니다.
 //
@@ -9,7 +9,7 @@
 // 둘 중 하나만 넣어도 됩니다.
 
 const FIREBASE_PROJECT = 'sudo-naesin';
-const ALLOWED_EMAILS = ['ilmvm66@gmail.com'];
+const OWNER = 'ilmvm66@gmail.com';
 const ALLOWED_ORIGINS = ['https://hongs-sudo.github.io'];
 const JWK_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
@@ -58,8 +58,19 @@ async function verify(token) {
   if (!ok) throw new Error('토큰 서명이 맞지 않습니다');
   if (body.aud !== FIREBASE_PROJECT || body.iss !== 'https://securetoken.google.com/' + FIREBASE_PROJECT) throw new Error('다른 프로젝트의 토큰입니다');
   if (!(body.exp > now - 60)) throw new Error('로그인이 만료됐습니다. 새로고침해 주세요');
-  if (!body.email_verified || !ALLOWED_EMAILS.includes(body.email)) throw new Error('허용되지 않은 계정입니다');
+  if (!body.email_verified || !body.email) throw new Error('허용되지 않은 계정입니다');
   return body.email;
+}
+// 등록된 선생님인지: 그 사람의 로그인 토큰으로 Firestore의 members/{이메일}을 읽어 확인 (5분 기억)
+const MEM = new Map();
+async function memberOf(email, token) {
+  if (email === OWNER) return { role: 'owner', active: true };
+  const hit = MEM.get(email); if (hit && Date.now() - hit.at < 300e3) return hit.m;
+  const r = await fetch(`https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/members/${encodeURIComponent(email)}`, { headers: { Authorization: 'Bearer ' + token } });
+  let m = null;
+  if (r.ok) { const d = await r.json(), f = d.fields || {}; m = { role: (f.role || {}).stringValue || '', active: !!(f.active || {}).booleanValue }; }
+  MEM.set(email, { m, at: Date.now() });
+  return m;
 }
 
 export default {
@@ -71,8 +82,17 @@ export default {
 
     if (path === '/') return json({ ok: true, name: '수도 내신분석 AI 중계' }, 200, H);
 
-    try { await verify((request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')); }
-    catch (e) { return json({ error: { message: e.message } }, 401, H); }
+    const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    let member;
+    try {
+      const email = await verify(token);
+      member = await memberOf(email, token);
+      if (!member || !member.active) throw new Error('선생님 관리에 등록되지 않았거나 사용이 멈춘 계정입니다');
+    } catch (e) { return json({ error: { message: e.message } }, 401, H); }
+    // 선생님(teacher)은 글자만 보내는 유사문항 비교만 (시험지·자료 그림 읽기는 관리자 이상)
+    if (member.role === 'teacher' && request.method === 'POST' && +(request.headers.get('Content-Length') || 0) > 120000) {
+      return json({ error: { message: '선생님 권한으로는 시험지·자료 읽기를 할 수 없습니다' } }, 403, H);
+    }
 
     if (path === '/status' && request.method === 'GET') {
       return json({ ok: true, claude: !!env.ANTHROPIC_API_KEY, openai: !!env.OPENAI_API_KEY, colo: (request.cf && request.cf.colo) || '' }, 200, H);

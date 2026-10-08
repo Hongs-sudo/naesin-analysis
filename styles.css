@@ -605,3 +605,21 @@ body[data-mode="phone"] .job .dl { display: none }
 .g5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px }
 .dinp { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line-2); border-radius: 10px; padding: 0 8px; background: var(--surface) }
 .dinp b { color: var(--brand) } .dinp input { border: 0 !important; min-height: 38px; width: 100%; padding: 0 !important; background: transparent }
+.bp-head small { font-weight: 400; color: var(--muted); font-size: 12px }
+.bp-rect { pointer-events: auto !important; cursor: move }
+.bp-rect i { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid var(--gold); border-radius: 2px }
+.bp-rect i[data-h="0"] { left: -7px; top: -7px; cursor: nwse-resize } .bp-rect i[data-h="1"] { right: -7px; top: -7px; cursor: nesw-resize }
+.bp-rect i[data-h="2"] { left: -7px; bottom: -7px; cursor: nesw-resize } .bp-rect i[data-h="3"] { right: -7px; bottom: -7px; cursor: nwse-resize }
+.bp-others { position: absolute; inset: 0; pointer-events: none }
+.bp-others i { position: absolute; border: 1.5px dashed var(--d3); border-radius: 3px; background: rgba(46,117,102,.05) }
+.bp-others span { position: absolute; left: -1px; top: -1px; font-size: 10px; font-style: normal; font-weight: 700; color: #fff; background: var(--d3); padding: 0 4px; border-radius: 2px 0 2px 0 }
+.boxtools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--surface-2) }
+.boxtools .dl { white-space: normal }
+.pbox { cursor: pointer } .pbox:hover { border-width: 3px }
+/* 선생님 관리 */
+.mbgrid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; align-items: start }
+body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-columns: minmax(0, 1fr) }
+.mbtbl td { padding: 10px 8px; vertical-align: middle } .mbtbl .em { font-size: 12.5px; color: var(--fg-2) } .mbtbl .sm { font-size: 12px; color: var(--fg-2) }
+.rolelist { display: flex; flex-direction: column; gap: 8px; font-size: 13px } .rolelist > div { display: flex; gap: 10px; align-items: center }
+.addform .sel input:disabled { background: var(--surface-2) }
+.rolechip { display: inline-block; margin-left: 4px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--gold); color: var(--side) }

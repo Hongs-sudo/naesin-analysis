@@ -1,18 +1,61 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 원장님 Google 계정만 읽고 쓸 수 있음. 선생님을 추가하려면 목록에 이메일을 더한다.
-    function allowed() {
-      return request.auth != null && request.auth.token.email_verified == true
-        && request.auth.token.email in ['ilmvm66@gmail.com'];
+    // ── 누가 들어올 수 있나 ──
+    // 원장(ilmvm66@gmail.com)은 모든 권한. 다른 분은 '선생님 관리'에 등록되고 사용 중(active)일 때만.
+    // 권한: co = 원장(공동), admin = 관리자, teacher = 선생님(담당 학생 · 학생 분석지만)
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function me() { return request.auth.token.email; }
+    function isOwner() { return signedIn() && me() == 'ilmvm66@gmail.com'; }
+    function memberDoc() { return /databases/$(database)/documents/members/$(me()); }
+    function isMember() { return signedIn() && exists(memberDoc()) && get(memberDoc()).data.active == true; }
+    function role() { return get(memberDoc()).data.role; }
+    function isCo() { return isOwner() || (isMember() && role() == 'co'); }
+    function isAdmin() { return isCo() || (isMember() && role() == 'admin'); }
+    function isTeacher() { return isMember() && role() == 'teacher'; }
+    function isStaff() { return isAdmin() || isTeacher(); }
+
+    // 시험 · 분석 · 단원유형 · 문항 그림 · 자료실: 모두 읽기, 관리자 이상만 쓰기
+    match /exams/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /analyses/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /types/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /img/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /materials/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
+    match /drafts/{id} { allow read, write: if isAdmin(); }
+    match /similar/{id} { allow read, write: if isStaff(); }
+    match /meta/{id} { allow read: if isStaff(); allow write: if isCo(); }
+
+    // 학생 · 시험 결과: 관리자 이상은 전체, 선생님은 자기가 등록한 학생만(owner)
+    match /students/{id} {
+      allow read, delete: if isAdmin() || (isTeacher() && resource.data.owner == me());
+      allow create: if isAdmin() || (isTeacher() && request.resource.data.owner == me());
+      allow update: if isAdmin() || (isTeacher() && resource.data.owner == me() && request.resource.data.owner == me());
     }
-    match /{document=**} {
-      allow read, write: if allowed();
+    match /results/{id} {
+      allow read, delete: if isAdmin() || (isTeacher() && resource.data.owner == me());
+      allow create: if isAdmin() || (isTeacher() && request.resource.data.owner == me());
+      allow update: if isAdmin() || (isTeacher() && resource.data.owner == me() && request.resource.data.owner == me());
     }
-    // 학부모님께 보내는 분석지 링크: 링크(긴 무작위 주소)를 아는 사람만 한 건씩 열람. 목록 보기는 막음.
-    // 학생 분석지 링크는 exp(만료 시각)가 지나면 열리지 않음.
+
+    // 선생님 목록: 원장·원장(공동)만 관리. '원장(공동)' 권한은 원장만 줄 수 있음. 본인은 자기 정보 읽기·마지막 접속만 기록
+    match /members/{email} {
+      allow read: if isCo() || (signedIn() && email == me());
+      allow create, update: if isOwner()
+        || (isCo() && request.resource.data.role != 'co' && (resource == null || resource.data.role != 'co'))
+        || (signedIn() && email == me() && resource != null && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastAt']));
+      allow delete: if isOwner() || (isCo() && resource.data.role != 'co');
+    }
+    // AI 사용량 (달마다 · 사람마다)
+    match /usage/{month}/by/{email} {
+      allow read: if isCo() || (signedIn() && email == me());
+      allow write: if isStaff() && email == me();
+    }
+
+    // 학부모님께 보내는 분석지 링크: 링크를 아는 사람만 한 건씩 열람. 학생 링크는 exp가 지나면 닫힘.
     match /shared/{id} {
       allow get: if !('exp' in resource.data) || request.time < resource.data.exp;
+      allow create: if isStaff();
+      allow update, delete: if isAdmin();
     }
   }
 }

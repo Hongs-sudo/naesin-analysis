@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="styles.css?v=26">
+<link rel="stylesheet" href="styles.css?v=27">
 </head>
 <body>
 <div class="app">
@@ -31,6 +31,7 @@
       <a href="#students" data-v="students"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg><span class="lbl">학생</span><span class="lbs">학생</span></a>
       <a href="#output" data-v="output"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 12h6M9 16h6"/></svg><span class="lbl">분석지 만들기</span><span class="lbs">분석지</span></a>
       <a href="#register" data-v="register"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg><span class="lbl">시험 등록</span><span class="lbs">등록</span></a>
+      <a href="#members" data-v="members"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.4 3.3-5.2 6.5-5.2s5.7 1.8 6.5 5.2M16 4.5a3.5 3.5 0 0 1 0 7M18 14.9c2 .7 3.2 2.4 3.6 5.1"/></svg><span class="lbl">선생님 관리</span><span class="lbs">선생님</span></a>
       <a href="#factory" data-v="factory"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z"/></svg><span class="lbl">문제 제작소</span><span class="lbs">제작소</span> <span class="soon">5단계</span></a>
     </nav>
     <div class="note" id="sideNote"></div>
@@ -49,19 +50,20 @@
 <div id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="report.js?v=26"></script>
+<script src="report.js?v=27"></script>
 <script src="ai.js?v=25"></script>
-<script src="pages.js?v=20"></script>
-<script src="register.js?v=26"></script>
+<script src="pages.js?v=27"></script>
+<script src="register.js?v=27"></script>
 <script src="similar.js?v=25"></script>
-<script src="library.js?v=22"></script>
-<script src="students.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="library.js?v=27"></script>
+<script src="students.js?v=27"></script>
+<script src="members.js?v=27"></script>
+<script src="app.js?v=27"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__bip = e; dispatchEvent(new Event('bip-ready')); });
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
-<script src="boot.js?v=26"></script>
+<script src="boot.js?v=27"></script>
 </body>
 </html>

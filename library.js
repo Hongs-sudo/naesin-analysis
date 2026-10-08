@@ -16,6 +16,7 @@ window.SudoLibrary = function (H) {
     found: { academy: null, school: null },   // 폴더에서 찾은 새 파일 [{file, rel, course, school, commercial, on}]
     jobs: {}, running: false, queue: [], stop: false, batch: { done: 0, total: 0 },
     thumbs: {},                                // matId → {pg: dataURL} (이번에 연 것만)
+    files: {},                                 // matId → 원본 File[] (이번에 연 것만, 영역 고치기에 씀)
     form: { name: '', course: '중등2-2', unit: '', school: '', commercial: false, files: [] }
   };
   const now = () => new Date().toISOString();
@@ -114,15 +115,19 @@ window.SudoLibrary = function (H) {
     return `<div class="head"><h2>${esc(m.name)} <small>${esc(m.course || '과정 미정')} · ${L.pg}쪽 (${pages.indexOf(L.pg) + 1}/${pages.length}) · 문항 ${probs.filter(p => !p.skip).length}개</small></h2>${m.status === 'review' ? '<span class="pill gold">색인 검수 전</span>' : m.status === 'done' ? '<span class="pill ok">확인 완료</span>' : ''}</div>
       ${j && j.st === 'run' ? `<p class="callout">AI가 읽는 중입니다 (${esc(j.msg || '')}). 끝나면 여기에 문항이 나옵니다.</p>` : ''}
       ${m.warnings && m.warnings.length ? `<div class="callout">${m.warnings.slice(0, 4).map(esc).join('<br>')}</div>` : ''}
+      ${probs.length && !(j && j.st === 'run') ? `<div class="boxtools">${L.files[m.id]
+        ? `<span class="dl">원본 연결됨 · 쪽 그림의 상자나 문항의 ‘영역’을 눌러 고치세요</span><button type="button" class="btn ghost sm" id="mSnap">글자 위치로 다시 맞추기</button>`
+        : `<span class="dl">상자를 고치려면 원본 파일을 한 번 열어 주세요 (MYBOX의 같은 파일)</span><label class="btn ghost sm" for="mReopen">원본 파일 다시 열기</label><input type="file" id="mReopen" accept=".pdf,.jpg,.jpeg,.png" multiple hidden>`}
+        <span class="dl">${probs.filter(p => p.boxSrc === 'text').length}/${probs.length}문항 글자 위치로 맞춤</span></div>` : ''}
       <details class="mset"><summary>자료 정보 고치기</summary><div class="addform">
         <label class="sel"><span>이름</span><input id="mName" value="${esc(m.name)}"></label>
         <div class="row2"><label class="sel"><span>과정</span><select id="mCourse">${COURSES.map(c => `<option ${c === m.course ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
         <label class="sel"><span>학교</span><select id="mSchool"><option value="">공통</option>${H.schools.map(s => `<option ${s === m.school ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></label></div>
         <label class="chk"><input type="checkbox" id="mCom" ${m.commercial ? 'checked' : ''}> 시중 교재 (그림 안 씀)</label>
-        <div class="row2"><button type="button" class="btn sm" id="mSave">정보 저장</button><button type="button" class="btn ghost sm danger" id="mDel">자료 지우기</button></div></div></details>
+        <div class="row2"><button type="button" class="btn sm" id="mSave">정보 저장</button>${ctx && ctx.can && !ctx.can.remove ? '' : '<button type="button" class="btn ghost sm danger" id="mDel">자료 지우기</button>'}</div></div></details>
       ${probs.length ? `<div class="revgrid">
-        <div class="pgview">${th ? `<div class="pgimg"><img src="${th}" alt="${L.pg}쪽">${here.map(p => p.box ? `<i class="pbox ${p.conf < 0.7 ? 'low' : ''} ${p.skip ? 'skip' : ''}" style="left:${p.box[0] / 10}%;top:${p.box[1] / 10}%;width:${(p.box[2] - p.box[0]) / 10}%;height:${(p.box[3] - p.box[1]) / 10}%"><span>${esc(p.no)}</span></i>` : '').join('')}</div><small class="dl">AI가 찾은 문항 영역 · 금색 = 유형이 애매함</small>`
-          : `<div class="pgnone">${m.commercial ? '시중 교재라 그림을 저장하지 않았습니다.' : '쪽 그림은 색인한 그 자리에서만 보입니다. 문항 그림은 오른쪽에 있습니다.'}${m.src !== 'custom' || true ? `<label class="btn ghost sm" for="mReopen">원본 파일 다시 열기</label><input type="file" id="mReopen" accept=".pdf,.jpg,.jpeg,.png" multiple hidden>` : ''}</div>`}</div>
+        <div class="pgview">${th ? `<div class="pgimg"><img src="${th}" alt="${L.pg}쪽">${here.map(p => p.box ? `<i class="pbox ${p.conf < 0.7 && !p.ok ? 'low' : ''} ${p.skip ? 'skip' : ''}" data-pbox="${p.k}" title="${esc(p.no)}번 영역 고치기" style="left:${p.box[0] / 10}%;top:${p.box[1] / 10}%;width:${(p.box[2] - p.box[0]) / 10}%;height:${(p.box[3] - p.box[1]) / 10}%"><span>${esc(p.no)}</span></i>` : '').join('')}</div><small class="dl">상자를 누르면 영역을 고칠 수 있습니다 · 금색 = 확인 필요</small>`
+          : `<div class="pgnone">${L.files[m.id] ? '쪽 그림을 만드는 중…' : '원본 파일을 열면 쪽 그림과 상자가 여기에 보입니다.'}</div>`}</div>
         <div class="plist">${here.map(p => probRow(m, p, mids)).join('') || '<div class="empty">이 쪽에는 문항이 없습니다.</div>'}</div></div>
       <div class="row2 navrow"><button type="button" class="btn ghost" id="pgPrev" ${pages.indexOf(L.pg) > 0 ? '' : 'disabled'}>이전 쪽</button>
         <span class="dl">${okPages.size}/${pages.length}쪽 확인</span>
@@ -133,7 +138,7 @@ window.SudoLibrary = function (H) {
     const types = p.mid ? REG.typesOf(m.course, p.mid) : [];
     const known = p.code && types.some(([c]) => c[0] === p.code);
     return `<div class="prow ${p.skip ? 'skip' : ''} ${(p.conf || 1) < 0.7 && !p.ok ? 'need' : ''}" data-k="${p.k}">
-      <div class="pth">${p.ik && !m.commercial ? `<button type="button" class="thumb" data-zoom><img data-ik="${esc(p.ik)}" alt="${esc(p.no)}번 문항 그림"></button>` : ''}${L.pages && L.pages.id === m.id ? `<button type="button" class="linkbtn" data-rebox>영역</button>` : ''}</div>
+      <div class="pth">${p.ik && !m.commercial ? `<button type="button" class="thumb" data-zoom><img data-ik="${esc(p.ik)}" alt="${esc(p.no)}번 문항 그림"></button>` : ''}${L.files[m.id] ? `<button type="button" class="linkbtn" data-rebox>영역 고치기</button>` : ''}${p.boxSrc === 'text' ? '<small class="dl">글자 위치</small>' : p.boxSrc === 'manual' ? '<small class="dl">직접 고침</small>' : ''}</div>
       <div class="pmain"><div class="ptop"><b>${esc(p.no)}번</b><div class="dseg">${[1, 2, 3, 4].map(k => `<button type="button" data-pd="${k}" class="d${k}" aria-pressed="${DIFF.indexOf(p.diff) === k}">${DIFF[k]}</button>`).join('')}</div>
         <button type="button" class="linkbtn" data-skip>${p.skip ? '되살리기' : '빼기'}</button></div>
         <div class="row2"><select data-pm aria-label="중단원"><option value="">중단원</option>${mids.map(x => `<option ${x.mid === p.mid ? 'selected' : ''}>${esc(x.mid)}</option>`).join('')}</select>
@@ -262,14 +267,27 @@ window.SudoLibrary = function (H) {
     const ro = $('#mReopen'); if (ro) ro.onchange = async () => {
       const files = [...ro.files];
       if (!(m.problems || []).length) { m.status = 'indexing'; enqueue([{ m, files }]); return; }
-      try {
-        toast('쪽을 여는 중…');
-        const pages = await window.SudoPages.load(files, { maxPages: MAXP, width: 1200 });
-        L.pages = { id: m.id, pages };
-        L.thumbs[m.id] = Object.fromEntries(pages.map((p, i) => [i + 1, window.SudoPages.thumb(p)]));
-        render();
-      } catch (e) { toast(e.message); }
+      L.files[m.id] = files; render();
+      try { await makeThumbs(m); render(); } catch (e) { toast(e.message); }
     };
+    const sn = $('#mSnap'); if (sn) sn.onclick = async ev => {
+      ev.currentTarget.disabled = true; ev.currentTarget.textContent = '맞추는 중…';
+      try {
+        const pgs = [...new Set(m.problems.map(p => p.pg || 1))], imgs = {}; let hit = 0;
+        for (const pg of pgs) {
+          const page = await pageOf(m, pg); if (!page) continue;
+          const list = m.problems.map((p, k) => Object.assign(p, { _k: k })).filter(p => (p.pg || 1) === pg && p.boxSrc !== 'manual');
+          hit += window.SudoPages.snap(list, [page], pg - 1);
+          list.forEach(p => { if (p.boxSrc === 'text' && !m.commercial && p.box) { const d = window.SudoPages.crop(page, p.box); if (d) { p.ik = p.ik || `m_${m.id}_${p._k}`; imgs[p.ik] = d; } } });
+        }
+        m.problems.forEach(p => { delete p._k; });
+        if (ctx && Object.keys(imgs).length) await ctx.saveImgs(imgs); else Object.assign(H.imgCache || {}, imgs);
+        saveMat(m, true);
+        toast(hit ? `${hit}문항을 글자 위치로 맞췄습니다` : '글자 위치를 찾지 못했습니다 (사진·스캔본이면 상자를 직접 고쳐 주세요)');
+      } catch (e) { toast('맞추지 못했습니다: ' + e.message); }
+      render();
+    };
+    $$('[data-pbox]').forEach(el => el.onclick = () => { if (!L.files[m.id]) { toast('원본 파일을 먼저 열어 주세요'); return; } rebox(m, +el.dataset.pbox); });
     $$('.prow').forEach(row => {
       const p = m.problems[+row.dataset.k];
       const mark = () => { p.ok = 1; p.conf = Math.max(p.conf || 0, 0.9); };
@@ -281,16 +299,36 @@ window.SudoLibrary = function (H) {
         const c = D.catalog[REG.catIdx()[v]]; Object.assign(p, { code: c[0], big: c[2], mid: `${c[3]}.${c[4]}`, type: `${c[5]}.${c[6]}` }); mark(); saveMat(m, true);
       };
       const zb = $('[data-zoom]', row); if (zb) zb.onclick = () => window.SudoPages.zoom($('img', zb).src, `${m.name} ${p.no}번`);
-      const rb = $('[data-rebox]', row); if (rb) rb.onclick = async () => {
-        const res = await window.SudoPages.pickBox(L.pages.pages, p.pg || 1, p.box); if (!res) return;
-        p.pg = res.pg; p.box = res.box; mark();
-        if (!m.commercial) {
-          const img = window.SudoPages.crop(L.pages.pages[res.pg - 1], res.box);
-          if (img) { p.ik = p.ik || `m_${m.id}_${+row.dataset.k}`; try { if (ctx) await ctx.saveImgs({ [p.ik]: img }); else (H.imgCache || {})[p.ik] = img; } catch (e) { toast('그림 저장 실패: ' + e.message); } }
-        }
-        saveMat(m, true); render();
-      };
+      const rb = $('[data-rebox]', row); if (rb) rb.onclick = () => rebox(m, +row.dataset.k);
     });
+  }
+
+  // 원본에서 한 쪽만 다시 그리기 (영역 고치기 · 다시 맞추기용)
+  const PAGEC = {};
+  async function pageOf(m, pg) {
+    const files = L.files[m.id]; if (!files) return null;
+    const key = m.id + '|' + pg; if (PAGEC[key]) return PAGEC[key];
+    const single = files.length === 1 && window.SudoPages.isPdf(files[0]);
+    const pages = single ? await window.SudoPages.load(files, { start: pg, maxPages: 1, width: 1200, noB64: true }) : (await window.SudoPages.load(files, { maxPages: MAXP, width: 1200, noB64: true })).slice(pg - 1, pg);
+    Object.keys(PAGEC).slice(0, Math.max(0, Object.keys(PAGEC).length - 3)).forEach(k => delete PAGEC[k]);
+    return (PAGEC[key] = pages[0] || null);
+  }
+  async function makeThumbs(m) {
+    const pgs = [...new Set((m.problems || []).map(p => p.pg || 1))].sort((a, b) => a - b);
+    L.thumbs[m.id] = L.thumbs[m.id] || {};
+    for (const pg of pgs) { const page = await pageOf(m, pg); if (page) L.thumbs[m.id][pg] = window.SudoPages.thumb(page); if (pg === L.pg) render(); }
+  }
+  async function rebox(m, k) {
+    const p = m.problems[k], pg = p.pg || 1;
+    const page = await pageOf(m, pg); if (!page) { toast('이 쪽을 열지 못했습니다'); return; }
+    const others = m.problems.map((o, i) => ({ pg: 1, box: (o.pg || 1) === pg && i !== k && !o.skip ? o.box : null, label: o.no }));
+    const res = await window.SudoPages.pickBox([page], 1, p.box, others); if (!res) return;
+    p.box = res.box; p.boxSrc = 'manual'; p.ok = 1; p.conf = Math.max(p.conf || 0, 0.9);
+    if (!m.commercial) {
+      const img = window.SudoPages.crop(page, res.box);
+      if (img) { p.ik = p.ik || `m_${m.id}_${k}`; try { if (ctx) await ctx.saveImgs({ [p.ik]: img }); else (H.imgCache || {})[p.ik] = img; } catch (e) { toast('그림 저장 실패: ' + e.message); } }
+    }
+    saveMat(m, true); render(); toast(`${p.no}번 영역을 고쳤습니다`);
   }
 
   // ---------- AI 색인 ----------
@@ -305,6 +343,8 @@ window.SudoLibrary = function (H) {
   async function runQueue() {
     L.running = true; L.stop = false;
     while (L.queue.length && !L.stop) {
+      const q = ctx && ctx.quota ? await ctx.quota().catch(() => ({ left: Infinity })) : { left: Infinity };
+      if (q.left < 1) { toast(`이번 달 AI 사용 한도(${q.limit}건)를 다 써서 색인을 멈춥니다`); L.stop = true; L.queue.splice(0).forEach(j => { delete D.materials[j.m.id]; delete L.jobs[j.m.id]; if (j.f) { j.f.on = false; (L.found[j.src] = L.found[j.src] || []).push(j.f); } }); break; }
       const { m, files } = L.queue.shift();
       const J = L.jobs[m.id] = { st: 'run', msg: '쪽 여는 중' }; paint();
       const settings = REG.aiSettings();
@@ -322,14 +362,22 @@ window.SudoLibrary = function (H) {
             meta: { name: m.name, course: m.course, school: m.school }, catalogLines: REG.catalogLines(m.course) });
           usage.in += u.in; usage.out += u.out;
           (result.warnings || []).forEach(w => warnings.push(`${s}~${s + pages.length - 1}쪽: ${w}`));
+          const chunk = [];
           (result.problems || []).forEach(it => {
             const pgL = Math.min(pages.length, Math.max(1, +it.pg || 1));
             const p = { no: String(it.no || ''), pg: s + pgL - 1, box: Array.isArray(it.box) && it.box.length === 4 ? it.box.map(Number) : null,
               diff: DIFF.includes(it.diff) ? it.diff : '', beh: it.beh || '', q: it.q || '', conf: typeof it.conf === 'number' ? Math.round(it.conf * 100) / 100 : 0.5, code: '', big: it.big || '', mid: it.mid || m.unit || '', type: it.type || '' };
             const ci = REG.catIdx(), c = it.code && ci[it.code] !== undefined ? D.catalog[ci[it.code]] : null;
             if (c && c[1] === m.course) Object.assign(p, { code: c[0], big: c[2], mid: `${c[3]}.${c[4]}`, type: `${c[5]}.${c[6]}` }); else p.conf = Math.min(p.conf, 0.69);
+            chunk.push(p);
+          });
+          // 글자 위치(PDF)로 문항 영역을 정확히 맞춤 — 글자 정보가 없는 사진·스캔본은 AI 위치 그대로
+          window.SudoPages.snap(chunk, pages, s - 1);
+          chunk.forEach(p => {
             const k = probs.length;
-            if (!m.commercial && p.box) { const d = window.SudoPages.crop(pages[pgL - 1], p.box); if (d) { p.ik = `m_${m.id}_${k}`; imgs[p.ik] = d; } }
+            if (!p.boxSrc) p.conf = Math.min(p.conf, 0.69);
+            const pgObj = pages[p.pg - s];
+            if (!m.commercial && p.box && pgObj) { const d = window.SudoPages.crop(pgObj, p.box); if (d) { p.ik = `m_${m.id}_${k}`; imgs[p.ik] = d; } }
             probs.push(p);
           });
           if (ctx && Object.keys(imgs).length) { await ctx.saveImgs(imgs); Object.keys(imgs).forEach(k2 => delete imgs[k2]); }
@@ -337,10 +385,11 @@ window.SudoLibrary = function (H) {
         all = null;
         Object.assign(m, { problems: probs, pages: total, status: 'review', warnings: warnings.slice(0, 8), model: settings.model, usage, indexedAt: now(), okPages: [] });
         delete m.error;
-        L.thumbs[m.id] = thumbs;
+        L.thumbs[m.id] = thumbs; L.files[m.id] = files;
         if (ctx) await ctx.saveMaterial(m.id, m);
         D.materials[m.id] = m; H.simReset();
         L.jobs[m.id] = { st: 'done' };
+        if (ctx && ctx.addUsage) ctx.addUsage(1);
         toast(`‘${m.name}’ 문항 ${probs.length}개를 찾았습니다`);
       } catch (e) {
         m.status = 'fail'; m.error = String(e.message || e).slice(0, 120);
