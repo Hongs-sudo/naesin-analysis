@@ -577,3 +577,4 @@ body[data-mode="phone"] .numgrid { grid-template-columns: repeat(6, minmax(0, 1f
 body[data-mode="phone"] .job { grid-template-columns: minmax(0, 1fr) 90px }
 body[data-mode="phone"] .job .dl { display: none }
 .head > .segx { flex: 0 1 auto } .head > .segx button { flex: 0 0 auto; padding: 0 16px }
+.callout.why { background: var(--gold-soft); color: var(--gold-fg); margin: 0 }

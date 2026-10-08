@@ -548,7 +548,9 @@ window.SudoRegister = function (H) {
           ${P.running ? '<button type="button" class="btn ghost big" id="preStop">멈추기 <small>지금 읽는 것까지만</small></button>' : `<div class="row2 btnrow">
             <button type="button" class="btn ghost big" id="preTry" ${cands.length && R.ai.url && P.map ? '' : 'disabled'}>먼저 3건 시험해 보기</button>
             <button type="button" class="btn big" id="preAll" ${cands.length && R.ai.url && P.map ? '' : 'disabled'}>${cands.length}건 모두 시작</button></div>`}
-          ${!R.ai.url ? '<p class="callout">‘한 건씩 등록’ 화면의 AI 연결을 먼저 마쳐 주세요.</p>' : ''}
+          ${P.running ? '' : !R.ai.url ? '<p class="callout why">버튼이 잠긴 이유: AI 연결이 아직 안 됐습니다. ‘한 건씩 등록’ 화면의 AI 연결을 먼저 마쳐 주세요.</p>'
+            : !P.map ? '<p class="callout why">버튼이 잠긴 이유: MYBOX 폴더가 연결되지 않았습니다. 위 ‘폴더 고르기’로 ‘B. 학교별 기출문제’ 폴더를 골라 주세요. (새로 고침하면 다시 골라야 합니다)</p>'
+            : !cands.length ? '<p class="callout why">버튼이 잠긴 이유: 고른 연도·학교에 분석할 시험이 없습니다. 연도나 학교를 더 켜 보세요.</p>' : ''}
           <div class="phases"><b>나눠서 진행하기 (권장 순서)</b>${PHASES.map(([k, ys, sub]) => {
             const tot = D.exams.filter(e => ys.includes(e.y) && readable(e)), done = tot.filter(e => e.an).length;
             const on = ys.every(y => P.years.includes(y)) && P.years.length === ys.length;
