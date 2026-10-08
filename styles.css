@@ -597,3 +597,4 @@ body[data-mode="phone"] .job .dl { display: none }
   .pgwrap:last-child { break-after: auto }
   .rpt[data-a4] { zoom: .995 }
 }
+@media print { [data-screen-only] { display: none !important } }

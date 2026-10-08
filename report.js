@@ -103,7 +103,7 @@
         ${prevTxt ? `<div style="font-size:13.5px;color:${K.ink2}">${esc(prevTxt)}</div>` : ''}
       </section>
       ${S.habits.length ? `<section style="display:flex;flex-direction:column;gap:9px;border-radius:14px;border:1px solid ${K.line};padding:16px 18px">
-        <div style="font-size:17px;font-weight:900;color:${K.g}">③ ${esc(short(e.s))}중은 이렇게 출제해요 <span style="font-size:12px;font-weight:500;color:${K.mute}">분석한 시험 기준</span></div>
+        <div style="font-size:17px;font-weight:900;color:${K.g}">③ ${esc(short(e.s))}중은 이렇게 출제해요</div>
         ${S.habits.slice(0, 3).map(h => `<div style="display:flex;gap:10px;align-items:baseline;font-size:14px;line-height:1.6"><span style="flex:0 0 auto;width:8px;height:8px;border-radius:99px;background:${K.gold}"></span><span>${esc(h[1])}</span></div>`).join('')}
       </section>` : ''}
       <section style="display:flex;flex-direction:column;gap:10px;flex:1">
@@ -267,21 +267,25 @@
     if (x.img) return `<div style="height:${h}px;border-radius:6px;border:1px solid ${K.line};background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${x.img}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;display:block"></div>`;
     return `<div style="height:${Math.round(h * .55)}px;border-radius:6px;border:1px dashed #CDD6D2;background:#FAFAF8;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:${K.mute};padding:6px">${x.noImg ? '교재 문제 — 출처만 표시' : '문제 그림 없음'}</div>`;
   }
+  // data-screen-only: 선생님 화면에서만 보이고 이미지·인쇄·링크에는 빠지는 부분
   function simBox(sim, opt) {
     if (!opt || !opt.on) return '';
-    const head = `<div style="font-size:${opt.small ? 15 : 15}px;font-weight:900;color:${K.g}">${esc(opt.title)} <span style="font-size:11px;font-weight:400;color:${K.mute}">${esc(opt.sub || '')}</span></div>`;
+    const head = `<div style="font-size:15px;font-weight:900;color:${K.g}">${esc(opt.title)}${opt.sub ? ` <span data-screen-only style="font-size:11px;font-weight:400;color:${K.mute}">${esc(opt.sub)}</span>` : ''}</div>`;
     const wrap = inner => `<section data-sim style="border-radius:12px;padding:${opt.small ? '14px 16px' : '12px 14px'};background:${opt.small ? '#fff' : '#F7F6F0'};display:flex;flex-direction:column;gap:10px">${head}${inner}</section>`;
-    if (!sim) return wrap(`<div style="font-size:12.5px;color:${K.mute};padding:8px 0">비슷한 문제를 찾는 중입니다…</div>`);
-    if (!sim.length) return wrap(`<div style="font-size:12.5px;color:${K.mute};padding:4px 0;line-height:1.6">아직 비교할 문항이 부족합니다. 같은 과정의 기출이나 자료실 문항이 쌓이면 자동으로 채워집니다.</div>`);
-    const lab = x => `${opt.lab || '이번'} ${x.forNo}번과 비슷`;
+    if (!sim) return wrap(`<div data-screen-only style="font-size:12.5px;color:${K.mute};padding:8px 0">내신대비 자료에서 비슷한 문제를 찾는 중입니다…</div>`);
+    if (!sim.length) return wrap(`<div style="font-size:12.5px;color:${K.mute};padding:4px 0;line-height:1.6">아직 비교할 내신대비 자료가 부족합니다. 자료실에 교재·프린트를 색인하면 자동으로 채워집니다.</div>`);
+    const lab = x => `${opt.lab === '틀린' ? '틀린' : '시험'} ${x.forNo}번과 비슷`;
+    const kind = x => x.kind ? `<span data-screen-only style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;background:${K.soft};color:${K.g};margin-right:4px">${esc(x.kind)}</span>` : '';
+    const foot = (x, fs) => `<div style="display:flex;flex-direction:column;gap:3px;border-top:1px dashed ${K.line};padding-top:6px;font-size:${fs}px;line-height:1.5;color:${K.ink2};word-break:keep-all">
+        ${x.why ? `<span><b style="color:${K.g}">비슷한 점</b> ${esc(x.why)}</span>` : ''}${x.concept ? `<span><b style="color:${K.goldFg}">필요한 개념</b> ${esc(x.concept)}</span>` : ''}</div>`;
     if (opt.small) return wrap(sim.map(x => `<div style="display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px solid #ECF1EF">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px"><b style="color:${K.g}">${lab(x)}</b>${dchip(x.d, 11)}</div>
-        ${simImg(x, 150)}<span style="font-size:12px;color:${K.ink2}">${esc(x.src)}</span></div>`).join(''));
+        ${simImg(x, 150)}<span style="font-size:12px;color:${K.ink2}">${kind(x)}${esc(x.src)}</span>${foot(x, 12)}</div>`).join(''));
     return wrap(`<div style="display:grid;grid-template-columns:repeat(${Math.max(sim.length, 1)},minmax(0,1fr));gap:10px">${sim.map(x => `
       <div style="background:#fff;border:1px solid ${K.line};border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11.5px"><b style="color:${K.g}">${lab(x)}</b>${dchip(x.d)}</div>
-        ${simImg(x, opt.h || 120)}
-        <div style="font-size:11px;line-height:1.45;color:${K.ink2};word-break:keep-all">${esc(x.src)}${x.why ? `<br><span style="color:${K.mute}">${esc(x.why)}</span>` : ''}</div></div>`).join('')}</div>`);
+        ${simImg(x, opt.h || 110)}
+        <div style="font-size:11px;line-height:1.45;color:${K.ink2};word-break:keep-all">${kind(x)}${esc(x.src)}</div>${foot(x, 10.5)}</div>`).join('')}</div>`);
   }
 
   // ---------- 학생 분석지 ----------
@@ -472,7 +476,7 @@
         ${card(h3('문항별 결과', '금색 줄 = 틀린 문항') + (wrongRows.length ? `<div style="font-size:12px;font-weight:700;color:${K.goldFg}">틀린 문항 ${wrongRows.length}개</div>${wrongRows.map(row).join('')}` : `<div style="font-size:13px;color:${K.mute}">틀린 문항이 없습니다.</div>`)
           + `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:13.5px;font-weight:700;color:${K.g};padding:10px 12px;border:1px solid ${K.line};border-radius:10px;text-align:center;list-style:none">전체 문항 보기 (${it.length}문항) ▾</summary><div style="margin-top:8px">${it.map(row).join('')}</div></details>`)}
         ${card(h3('보완할 점', '', K.gold2) + fx.map((f, k) => `<div style="display:flex;gap:10px;font-size:14px;line-height:1.6;color:#fff"><b style="color:${K.gold2}">0${k + 1}</b><span><b>${esc(f[0])}</b>${f[1] ? ' — ' + esc(f[1]) : ''}</span></div>`).join(''), `background:${K.g}`)}
-        ${simBox(opt.sim, { on: opt.simOn, small: true, lab: '틀린', title: '다시 풀어 볼 비슷한 문제', sub: '틀린 문항 기준' })}
+        ${simBox(opt.sim, { on: opt.simOn, small: true, lab: '틀린', title: '내신대비 자료에서 다시 풀어 볼 비슷한 문제' })}
         ${noteBox(note, true)}
         <div style="text-align:center;font-size:12px;color:${K.mute};padding:4px 0 10px;line-height:1.7">1:1 명품 맞춤 수학학원 · 수학도서관${opt.expires ? `<br>이 링크는 ${esc(opt.expires)}까지 열립니다` : ''}</div>
       </div></div>`;
@@ -498,6 +502,7 @@
     clone.style.transform = 'none'; clone.style.margin = '0';
     box.appendChild(clone);
     box.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable'));
+    box.querySelectorAll('[data-screen-only]').forEach(x => x.remove());
     document.body.appendChild(box);
     try {
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -572,7 +577,7 @@
     build(format, e, ctx, note, extra) {
       extra = extra || {};
       const sim = (small, lab, h) => simBox(extra.sim, { on: extra.simOn, small, lab, h,
-        title: lab === '틀린' ? '다시 풀어 볼 비슷한 문제' : '이번 시험 고난도 문항과 비슷한 문제', sub: lab === '틀린' ? '틀린 문항 기준 · 기출 고난도 우선' : '기출 실력·심화 우선 → 학원 자료 → 학교 프린트' });
+        title: lab === '틀린' ? '내신대비 자료에서 다시 풀어 볼 비슷한 문제' : '수학도서관 내신대비 자료에 나온 비슷한 문제', sub: '학원 교재 · 선생님 보조자료 · 학교 프린트 · 이 학교 지난 기출' });
       const put = (h, small, lab, sh) => h.replace('<!--SIM-->', sim(small, lab, sh)).replace('<!--NOTE-->', noteBox(note, small)).replace('<!--NOTE2-->', noteBox(note, false));
       if (extra.student) {
         const st = Object.assign({}, extra.student); st.C = studentCalc(e, st.res); st.fixes = studentFixes(e, st.C, st.res, st.avg);

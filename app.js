@@ -96,12 +96,20 @@ window.startApp = function (D, ctx) {
     });
     return { ex, per };
   }
-  function habits(s) {
+  // teacher=true: 선생님 화면용 (어느 시험에서 나온 결과인지 함께 표시)
+  function habits(s, teacher) {
     const st = schoolStats(s); if (!st) return [];
     const P = st.per, N = P.length, out = [];
     const objOnly = P.every(p => p.essay === 0);
-    out.push(['형식', objOnly ? `분석한 ${N}번 모두 서술형 없이 객관식만 출제했습니다. 부분 점수가 없어 계산 실수가 곧 감점입니다.`
-      : `서답형이 평균 ${(P.reduce((a, p) => a + p.essay, 0) / N).toFixed(1)}문항, ${Math.round(P.reduce((a, p) => a + p.essayPts, 0) / N)}점 나옵니다. 풀이 서술 연습이 따로 필요합니다.`]);
+    const lab = p => `${p.e.y} ${p.e.g}-${p.e.t} ${p.e.x}${p.e.an.status === 'ai' ? '(검수 전)' : ''}`;
+    if (objOnly) out.push(['형식', `분석한 ${N}번 모두 서술형 없이 객관식만 출제했습니다. 부분 점수가 없어 계산 실수가 곧 감점입니다.`]);
+    else {
+      const W = P.filter(p => p.essay > 0), k = W.length;
+      const avgN = (W.reduce((a, p) => a + p.essay, 0) / k), avgP = Math.round(W.reduce((a, p) => a + p.essayPts, 0) / k);
+      out.push(['형식', k === N ? `서답형이 매번 평균 ${Math.round(avgN * 10) / 10}문항, ${avgP}점 나옵니다. 풀이 서술 연습이 따로 필요합니다.`
+        : `분석한 ${N}번 중 ${k}번에 서답형이 있었습니다(있을 때 평균 ${Math.round(avgN * 10) / 10}문항, ${avgP}점). 나머지는 객관식만 출제했습니다.`
+        + (teacher ? ` [서답형 있던 시험: ${W.map(lab).join(', ')}]` : '')]);
+    }
     const mx = [...new Set(P.map(p => p.objMax))], cn = P.map(p => p.nObjMax);
     out.push(['배점', mx.length === 1 ? `객관식 최고 배점은 ${mx[0]}점, 시험마다 ${Math.min(...cn) === Math.max(...cn) ? cn[0] + '문항' : Math.min(...cn) + '~' + Math.max(...cn) + '문항'}입니다.`
       : `객관식 최고 배점이 시험마다 ${mx.join('·')}점으로 달랐습니다.`]);
@@ -386,7 +394,7 @@ window.startApp = function (D, ctx) {
         <div class="tile dark"><span>문항 분석</span><b>${N}건</b><span>${P.reduce((a, p) => a + p.n, 0)}문항${P.some(p => p.e.an.status === 'ai') ? ` · 검수 전 ${P.filter(p => p.e.an.status === 'ai').length}건 포함` : ''}</span></div>
         <div class="tile"><span>형식</span><b>${P.some(p => p.essay) ? '서답형 있음' : '객관식만'}</b><span>평균 ${(P.reduce((a, p) => a + p.n, 0) / N).toFixed(1)}문항</span></div>
         <div class="tile"><span>실력·심화 평균</span><b>${Math.round(P.reduce((a, p) => a + p.top, 0) / N)}점</b><span>등급을 가르는 구간</span></div></div>
-      <section class="card"><h2>${esc(short(s))}중 출제 습관 <small>분석한 ${N}개 시험에서 자동으로 뽑음${P.some(p => p.e.an.status === 'ai') ? ` · <span class="goldt">검수 전 ${P.filter(p => p.e.an.status === 'ai').length}건 포함</span>` : ''}</small></h2>${habits(s).map(h => `<div class="habit"><span class="k">${h[0]}</span><span>${esc(h[1])}</span></div>`).join('')}</section>
+      <section class="card"><h2>${esc(short(s))}중 출제 습관 <small>분석한 ${N}개 시험에서 자동으로 뽑음${P.some(p => p.e.an.status === 'ai') ? ` · <span class="goldt">검수 전 ${P.filter(p => p.e.an.status === 'ai').length}건 포함</span>` : ''}</small></h2>${habits(s, true).map(h => `<div class="habit"><span class="k">${h[0]}</span><span>${esc(h[1])}</span></div>`).join('')}</section>
       <section class="card"><div class="head"><h2>문항 지도 누적 <small>색 = 난이도 · 진한 테두리 = 객관식 최고 배점 · 흰 점 = 서답형</small></h2>${legendHtml()}</div><div class="map">${nums}${map}</div></section>
       <div class="grid2">
         <section class="card"><h2>실력 · 심화 배점</h2><div class="hbars">${P.map(p => `<div class="hb"><span>${p.e.g}-${p.e.t} ${p.e.x}</span><div><i style="width:${Math.round(p.top / topMax * 100)}%"></i></div><b>${p.top}점</b></div>`).join('')}</div></section>
@@ -618,7 +626,7 @@ window.startApp = function (D, ctx) {
         // 학생 링크는 휴대폰용 세로형 한 장으로 따로 만든다 (고친 '보완할 점' 글은 그대로)
         const exp = new Date(Date.now() + OUT.days * 864e5), ymd = `${exp.getFullYear()}-${String(exp.getMonth() + 1).padStart(2, '0')}-${String(exp.getDate()).padStart(2, '0')}`;
         html = [window.SudoReport.studentLink(e, NOTE, Object.assign({}, extra, { sim: OUT.sim ? (SIMC[simKey] || []) : undefined }), { fixes: window.SudoReport.readFixes($('#preview')), expires: ymd })];
-      } else html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); return c.outerHTML; });
+      } else html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); c.querySelectorAll('[data-screen-only]').forEach(x => x.remove()); return c.outerHTML; });
       const title = `${stu ? sd.name + ' 학생 · ' : ''}${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석`;
       const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'r.html#' + id;
       const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, kind: stu ? 'student' : 'exam', createdAt: new Date().toISOString() }, stu ? +OUT.days : 0);
@@ -642,7 +650,7 @@ window.startApp = function (D, ctx) {
   function runSim(key, e, sd, force) {
     if (SIMRUN[key]) return; SIMRUN[key] = 1;
     const targets = sd ? SIM.studentTargets(e, window.SudoReport.studentCalc(e, sd.res).lost) : SIM.examTargets(e);
-    SIM.find(targets, { exclude: e.id, force }).then(r => { SIMC[key] = r; }, err => { SIMC[key] = []; toast('유사문항을 찾지 못했습니다: ' + err.message); }).finally(() => {
+    SIM.find(targets, { exam: e, force }).then(r => { SIMC[key] = r; }, err => { SIMC[key] = []; toast('유사문항을 찾지 못했습니다: ' + err.message); }).finally(() => {
       delete SIMRUN[key];
       if ((location.hash || '') !== '#output' || !OUT.sim) return;
       const cur = OUT.kind === 'student' ? STU.reportData(OUT.sid, OUT.sx, OUT.avg) : null;
