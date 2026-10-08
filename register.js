@@ -593,7 +593,7 @@ window.SudoRegister = function (H) {
     const al = $('#preAll'); if (al) al.onclick = () => { const c = preCands(); if (confirm(`${c.length}건을 차례로 읽습니다. 예상 ${fmtDur(c.length * 100 / P.conc)} 안팎이고, 그동안 이 창을 열어 두어야 합니다. 시작할까요?`)) go(c, 'an'); };
     const fl = $('#preFill'); if (fl) fl.onclick = () => go(fillCands(), 'fill');
     const sp = $('#preStop'); if (sp) sp.onclick = () => { P.stop = true; sp.disabled = true; sp.textContent = '지금 읽는 것까지만 하고 멈춥니다'; };
-    const rt = $('#preRetry'); if (rt) rt.onclick = () => runPre(P.list.filter(j => j.st === 'fail').map(j => Object.assign(j, { st: 'wait', msg: '' })), true);
+    const rt = $('#preRetry'); if (rt) rt.onclick = () => runPre(P.list.filter(j => j.st === 'fail').map(j => Object.assign(j, { st: 'wait', msg: '', final: false })), true);
   }
   const prePaint = () => { if ((location.hash || '').startsWith('#register') && !R.draft && R.tab === 'pre') render(); };
   async function runPre(list, keep) {
@@ -605,7 +605,7 @@ window.SudoRegister = function (H) {
       while (!P.stop && next < list.length) {
         const j = list[next++], t0 = Date.now();
         j.st = 'run'; j.msg = '쪽 여는 중'; prePaint();
-        const tick = setInterval(() => { j.msg = `${Math.round((Date.now() - t0) / 1000)}초째`; const el = document.querySelector(`.job[data-jid="${CSS.escape(j.e.id)}"] .dl`); if (el) el.textContent = j.msg; }, 5000);
+        const tick = setInterval(() => { if (j.final) return; j.msg = `${Math.round((Date.now() - t0) / 1000)}초째`; const el = document.querySelector(`.job[data-jid="${CSS.escape(j.e.id)}"] .dl`); if (el) el.textContent = j.msg; }, 5000);
         try {
           const files = filesFor(j.e); if (!files) throw new Error('파일을 찾지 못함');
           const pages = await window.SudoPages.load(files, { maxPages: 16 });
@@ -625,7 +625,7 @@ window.SudoRegister = function (H) {
             analysis.items.forEach(it => { const r = byNo[it.no]; if (r) { hit++; Object.assign(it, { q: r.q, pg: r.pg, box: r.box, ik: r.ik }); } });
             Object.keys(imgs).forEach(k => { if (!analysis.items.some(it => it.ik === k)) delete imgs[k]; });
             analysis.source = Object.assign({}, analysis.source || {}, { imgFill: { model: settings.model, at: now(), usage } });
-            j.msg = `${hit}문항 그림`;
+            j.final = true; j.msg = `${hit}문항 그림`;
           } else {
             const warnings = (result.warnings || []).slice(0, 6);
             if (result.total_pts) warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
@@ -635,12 +635,12 @@ window.SudoRegister = function (H) {
                 ans: r.ans || '', sol: r.sol || '', q: r.q || '', ik: r.ik || '', conf: Math.round(r.conf * 100) / 100, pg: r.pg || 0, box: r.box || null })),
               source: { kind: 'ai', provider: settings.provider, model: settings.model, at: now(), usage, secs, withAns, batch: true, files: files.map(f => f.name), warnings }, savedAt: now()
             };
-            j.msg = `${rows.length}문항 · 확인 ${rows.filter(r => !r.ok).length}개 · ${secs}초`;
+            j.final = true; j.msg = `${rows.length}문항 · 확인 ${rows.filter(r => !r.ok).length}개 · ${secs}초`;
           }
           if (ctx) await ctx.saveAnalysis({ id: j.e.id, analysis, imgs });
           H.applySaved({ id: j.e.id, analysis });
           j.st = 'done'; j.secs = secs;
-        } catch (e) { j.st = 'fail'; j.msg = String(e.message || e).slice(0, 60); }
+        } catch (e) { j.final = true; j.st = 'fail'; j.msg = String(e.message || e).slice(0, 60); }
         clearInterval(tick);
         prePaint();
       }
