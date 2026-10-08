@@ -35,10 +35,10 @@
 
   // Firestore 문서 → 화면이 쓰는 모양(D)
   async function load() {
-    const [ex, an, ty, meta, dr, ai, mat, stu, res] = await Promise.all([
+    const [ex, an, ty, meta, dr, ai, mat, stu, res, sts] = await Promise.all([
       db.collection('exams').get(), db.collection('analyses').get(), db.collection('types').get(), db.doc('meta/info').get(),
       db.collection('drafts').get(), db.doc('meta/ai').get(),
-      db.collection('materials').get(), db.collection('students').get(), db.collection('results').get()]);
+      db.collection('materials').get(), db.collection('students').get(), db.collection('results').get(), db.collection('stats').get()]);
     if (ex.empty) return null;
     const types = ty.docs.map(d => d.data()).sort((a, b) =>
       a.course.localeCompare(b.course) || a.midNo.localeCompare(b.midNo) || a.typeNo.localeCompare(b.typeNo));
@@ -49,14 +49,14 @@
       const e = d.data();
       return { id: d.id, s: e.school, m: e.main ? 1 : 0, y: e.year, g: e.grade, t: e.sem, x: e.exam,
         p: e.hasPaper ? 1 : 0, a: e.hasAnswer ? 1 : 0, sc: e.hasPoints ? 1 : 0, r: e.hasRubric ? 1 : 0, f: e.formats || [],
-        fl: (e.files || []).map(f => [f.path, f.role, f.variant || '']), pr: e.primary || '', n: e.notes || [] };
+        fl: (e.files || []).map(f => [f.path, f.role, f.variant || '']), pr: e.primary || '', n: e.notes || [], st: e.stats || null };
     });
     const m = meta.exists ? meta.data() : {};
     const byId = snap => Object.fromEntries(snap.docs.map(d => [d.id, Object.assign({ id: d.id }, d.data())]));
     return { v: 1, built: m.built || '', root: m.root || '', exams, analyzed,
       catalog: types.map(t => [t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']), predicted: m.predicted || [],
       drafts: Object.fromEntries(dr.docs.map(d => [d.id, d.data()])), ai: ai.exists ? ai.data() : null,
-      materials: byId(mat), students: byId(stu), results: byId(res) };
+      materials: byId(mat), students: byId(stu), results: byId(res), stats: Object.fromEntries(sts.docs.map(d => [d.id, d.data()])) };
   }
 
   // 받은 데이터 파일(앱용 JSON)을 Firestore에 넣는다
@@ -137,6 +137,12 @@
         await b.commit();
       },
       saveImgs: putImgs,
+      // 학교 성적 자료 (학교알리미 학기 자료 · 학교 발표). stats=null이면 지움
+      saveExamStats: async (ids, stats) => {
+        const b = db.batch();
+        ids.forEach(id => b.set(db.collection('exams').doc(id), { stats: stats ? strip(stats) : firebase.firestore.FieldValue.delete() }, { merge: true }));
+        await b.commit();
+      },
       // 그림 가져오기: {key: dataURL}
       getImgs: async keys => {
         const need = [...new Set(keys.filter(k => k && !(k in IMG)))];
@@ -157,6 +163,9 @@
         const b = db.batch(); (resultIds || []).forEach(r => b.delete(db.collection('results').doc(r))); b.delete(db.collection('students').doc(id)); await b.commit();
       },
       saveResult: (id, d) => db.collection('results').doc(id).set(strip(d)),
+      // 학교 성적 자료 (학교알리미 학기 자료 또는 학교 발표 시험 자료) — 시험 id별
+      saveStats: (id, d) => db.collection('stats').doc(id).set(strip(d)),
+      deleteStats: id => db.collection('stats').doc(id).delete(),
       deleteResult: id => db.collection('results').doc(id).delete(),
       getSimilar: key => db.collection('similar').doc(key).get().then(s => s.exists ? s.data() : null, () => null),
       saveSimilar: (key, d) => db.collection('similar').doc(key).set(strip(d)).catch(() => {})

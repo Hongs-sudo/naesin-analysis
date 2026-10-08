@@ -15,6 +15,73 @@
   const strip = s => String(s || '').replace(/^[^.]*\./, '').trim();
   const short = s => s.replace(/중$/, '');
 
+
+  // ---------- 학교 성적 자료 (학교알리미 학기 자료 · 학교 발표) ----------
+  const LET = ['A', 'B', 'C', 'D', 'E'], BAND = { A: [90, 100], B: [80, 90], C: [70, 80], D: [60, 70], E: [0, 60] };
+  const letterOf = v => v >= 90 ? 'A' : v >= 80 ? 'B' : v >= 70 ? 'C' : v >= 60 ? 'D' : 'E';
+  function phi(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2); const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - p : p; }
+  const hasDist = st => st && st.dist && LET.every(k => st.dist[k] !== undefined && st.dist[k] !== '' && !isNaN(+st.dist[k]));
+  const statsLabel = st => st.src === 'school' ? '학교 발표 (이 시험)' : `${st.year} ${st.grade}학년 ${st.sem}학기 학교알리미 기준`;
+  // 점수 → 학교 안 상위 % (평균·표준편차 계산과 A~E 비율 계산을 함께 보고 범위로)
+  function schoolPos(score, st) {
+    if (!st) return null;
+    const v = [];
+    if (+st.avg > 0 && +st.sd > 0) v.push((1 - phi((score - st.avg) / st.sd)) * 100);
+    if (hasDist(st)) {
+      const tot = LET.reduce((a, k) => a + +st.dist[k], 0) || 100, L = letterOf(score), [lo, hi] = BAND[L];
+      const above = LET.slice(0, LET.indexOf(L)).reduce((a, k) => a + +st.dist[k], 0);
+      v.push((above + Math.min(1, Math.max(0, (hi - score) / (hi - lo))) * +st.dist[L]) / tot * 100);
+    }
+    if (!v.length) return null;
+    const a = Math.max(1, Math.min(99, Math.floor(Math.min(...v)))), b = Math.max(1, Math.min(99, Math.ceil(Math.max(...v))));
+    return { lo: a, hi: b, text: b - a <= 4 ? `상위 약 ${Math.round((a + b) / 2)}%` : `상위 약 ${a}~${b}%` };
+  }
+  // 실력의 모양: 기본·응용 / 실력·심화 맞힌 비율
+  function shapeOf(e, C) {
+    const it = e.an.items, f = i => i[1] ? Math.max(0, (i[1] - (C.lost[i[0]] || 0)) / i[1]) : 1;
+    const avg = a => a.length ? Math.round(a.reduce((x, i) => x + f(i), 0) / a.length * 100) : null;
+    const lo = avg(it.filter(i => i[2] <= 2)), hi = avg(it.filter(i => i[2] >= 3));
+    let t;
+    if (lo === null || hi === null) t = ['고르게 풀었음', ''];
+    else if (lo >= 90 && hi >= 90) t = ['전 영역 탄탄', '심화 문제로 실력 넓히기'];
+    else if (lo >= 90) t = ['기본·응용 탄탄', '변별 문항 보완'];
+    else if (lo >= 75) t = ['기본 실수 점검', hi >= 70 ? '변별 문항은 양호' : '변별 문항 보완'];
+    else t = ['기본 개념부터', '다시 다지기'];
+    return { lo, hi, t };
+  }
+  // 등급을 가른 문제 번호: 길면 두 줄로 나눠 깔끔하게
+  function killerHtml(S, big, small) {
+    const n = S.killers.map(i => i[0]);
+    if (!n.length) return `<span style="font-size:${big}px;font-weight:900;line-height:1.15">—</span>`;
+    const one = n.join('·') + '번';
+    if (one.length <= 9) return `<span style="font-size:${one.length <= 6 ? big : small}px;font-weight:900;letter-spacing:-1px;line-height:1.15;white-space:nowrap">${one}</span>`;
+    const h = Math.ceil(n.length / 2);
+    return `<span style="font-size:${small}px;font-weight:900;letter-spacing:-1px;line-height:1.2;display:flex;flex-direction:column"><span style="white-space:nowrap">${n.slice(0, h).join('·')}·</span><span style="white-space:nowrap">${n.slice(h).join('·')}번</span></span>`;
+  }
+  const levelFont = (lv, big, small) => lv.length <= 5 ? big : small;
+  // 학생: '이번 성적 위치' 칸
+  function posBlock(e, st, C, mode) {
+    const S2 = e.st || null, P = schoolPos(C.score, S2), sh = shapeOf(e, C), L = letterOf(C.score);
+    const small = mode === 'card';
+    const tile = (bg, fg, k, v, sub, vs) => `<div style="border-radius:12px;padding:${small ? '12px 14px' : '12px 14px'};background:${bg};color:${fg};display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:11px;font-weight:700;opacity:.85">${k}</span><b style="font-size:${vs}px;font-weight:900;line-height:1.25;letter-spacing:-.5px">${v}</b><span style="font-size:11px;line-height:1.5;opacity:.85">${sub}</span></div>`;
+    const tiles = [
+      tile(K.g, '#fff', '이번 지필 기준 예상 성취도', L, `${C.score}점 · 수행평가 합산 전`, small ? 26 : 30),
+      P ? tile(K.cream, K.g, '학교 안 위치 (근사치)', P.text, `학교 평균 ${S2.avg}점보다 ${C.score - S2.avg >= 0 ? '+' : ''}${Math.round((C.score - S2.avg) * 10) / 10}점<br>${esc(statsLabel(S2))}`, small ? 18 : 20) : '',
+      tile(K.goldSoft, K.goldFg, '실력의 모양', `${sh.t[0]}${sh.t[1] ? '<br>' + sh.t[1] : ''}`, sh.lo !== null && sh.hi !== null ? `기본·응용 ${sh.lo}% · 실력·심화 ${sh.hi}%` : '', small ? 16 : 17)
+    ].filter(Boolean);
+    let bar = '';
+    if (P && hasDist(S2)) {
+      const tot = LET.reduce((a, k) => a + +S2.dist[k], 0) || 100, pos = 100 - (P.lo + P.hi) / 2;
+      const C5 = { E: [K.goldSoft, K.goldFg], D: [K.pale, K.g], C: [K.mint, K.g], B: [K.g3, '#fff'], A: [K.g, '#fff'] };
+      bar = `<div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11.5px;font-weight:700;color:${K.ink2}">학교 성취도 분포 안에서 <span style="font-weight:400;color:${K.mute}">막대 = 학교 A~E 비율 · 금색 선 = ${esc(st.name)} 학생</span></span>
+        <div style="position:relative;margin-top:12px"><div style="display:flex;height:24px;border-radius:6px;overflow:hidden;font-size:10px;font-weight:700">${['E', 'D', 'C', 'B', 'A'].map(k => `<div style="flex:${+S2.dist[k] / tot * 100};background:${C5[k][0]};color:${C5[k][1]};display:flex;align-items:center;justify-content:center">${+S2.dist[k] >= 6 ? k : ''}</div>`).join('')}</div>
+        <div style="position:absolute;top:-6px;left:${Math.max(1, Math.min(99, pos))}%;width:2px;height:36px;background:${K.gold}"></div></div></div>`;
+    }
+    return `<section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:#fff">
+      <div style="font-size:14px;font-weight:900;color:${K.g}">이번 성적 위치</div>
+      <div style="display:grid;grid-template-columns:repeat(${small ? 1 : tiles.length},minmax(0,1fr));gap:8px">${tiles.join('')}</div>${bar}</section>`;
+  }
+
   // ---------- 숫자 계산 ----------
   function summarize(e, ctx) {
     const it = e.an.items, n = it.length;
@@ -45,7 +112,7 @@
     }
     if (essayN) todo.push(['서술형 풀이 쓰기', `서답형 ${essayN}문항 ${essayPts}점. 풀이 과정을 끝까지 쓰는 연습`]);
     else todo.push(['마킹 전 검산', '객관식만 나와 부분 점수가 없습니다. 계산 실수를 줄이는 습관']);
-    return { it, n, total, cnt, pts, bigs, mids, objMax, killers, beh, lv, cuts, essayN, essayPts, prev, habits, todo: todo.slice(0, 3) };
+    return { it, n, total, cnt, pts, bigs, mids, objMax, killers, beh, lv, cuts, essayN, essayPts, prev, habits, todo: todo.slice(0, 3), st: e.st || null };
   }
 
   // ---------- 공통 조각 ----------
@@ -65,9 +132,6 @@
     const big = S.bigs.slice(0, 3);
     const tot = S.total || 100;
     const unitBar = big.map(([name, p], k) => `<div style="flex:${p};background:${k === 0 ? K.g : k === 1 ? K.mint : K.pale};color:${k === 0 ? '#fff' : K.g};display:flex;align-items:center;padding:0 12px;white-space:nowrap;overflow:hidden">${esc(name)} ${Math.round(p)}점</div>`).join('');
-    const cut1 = S.cuts['1등급'] ? S.cuts['1등급'] : '—';
-    const others = ['2등급', '3등급'].filter(g => S.cuts[g]).map(g => `${g.replace('등급', '등급')} ${S.cuts[g]}`).join(' · ');
-    const killerTxt = S.killers.length ? S.killers.map(i => i[0]).join('·') + '번' : '—';
     const killerSub = S.killers.length ? `${S.killers.every(i => i[0] > S.n - 4) ? '마지막 문제들' : '고난도 문항'}, ${[...new Set(S.killers.map(i => i[1]))].join('·')}점<br>${esc(strip(S.killers[0][6]))}` : '';
     const prevTxt = S.prev ? `직전 시험(${S.prev.label})과 비교: 실력·심화 ${S.prev.top}점 → ${S.pts[3] + S.pts[4]}점` : '';
     return `<div class="rpt" data-w="794" style="width:794px;height:1123px;overflow:hidden;box-sizing:border-box;padding:40px 44px 30px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:22px">
@@ -80,16 +144,19 @@
       <section style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
         <div style="border-radius:14px;background:${K.g};color:#fff;padding:18px;display:flex;flex-direction:column;gap:6px">
           <span style="font-size:13px;font-weight:700;color:#CFE0DB">이번 시험 난이도</span>
-          <span style="font-size:${S.lv[1].length > 5 ? 24 : 30}px;font-weight:900;letter-spacing:-1px;white-space:nowrap">${S.lv[1]}</span>
+          <span style="font-size:${levelFont(S.lv[1], 30, 22)}px;font-weight:900;letter-spacing:-1px;white-space:nowrap">${S.lv[1]}</span>
           <div style="display:flex;gap:4px">${[1, 2, 3, 4, 5].map(k => `<span style="flex:1;height:8px;border-radius:4px;background:${k <= S.lv[0] ? K.gold2 : '#2D6A64'}"></span>`).join('')}</div>
           <span style="font-size:12px;color:#CFE0DB">5단계 중 ${S.lv[0]}</span></div>
         <div style="border-radius:14px;background:${K.cream};padding:18px;display:flex;flex-direction:column;gap:6px">
-          <span style="font-size:13px;font-weight:700;color:${K.mute}">예상 1등급 컷</span>
-          <span style="font-size:34px;font-weight:900;letter-spacing:-1px;color:${K.g}">${esc(cut1)}</span>
-          <span style="font-size:12px;color:${K.mute};line-height:1.5">${esc(others)}<br>AI 추정 · 실제 발표 시 교체</span></div>
+          ${S.st ? `<span style="font-size:13px;font-weight:700;color:${K.mute}">학교 성적 분포</span>
+          <span style="font-size:28px;font-weight:900;letter-spacing:-1px;color:${K.g};white-space:nowrap">평균 ${esc(S.st.avg)}점</span>
+          <span style="font-size:12px;color:${K.mute};line-height:1.5">${hasDist(S.st) ? `A ${Math.round(S.st.dist.A)}% · E ${Math.round(S.st.dist.E)}%<br>` : ''}${esc(statsLabel(S.st))}</span>`
+          : `<span style="font-size:13px;font-weight:700;color:${K.mute}">실력 + 심화 배점</span>
+          <span style="font-size:30px;font-weight:900;letter-spacing:-1px;color:${K.g};white-space:nowrap">${S.pts[3] + S.pts[4]}점</span>
+          <span style="font-size:12px;color:${K.mute};line-height:1.5">${S.cnt[3] + S.cnt[4]}문항 · 등급을 가르는 구간</span>`}</div>
         <div style="border-radius:14px;background:${K.goldSoft};padding:18px;display:flex;flex-direction:column;gap:6px">
           <span style="font-size:13px;font-weight:700;color:${K.goldFg}">등급을 가른 문제</span>
-          <span style="font-size:${killerTxt.length > 8 ? 26 : 34}px;font-weight:900;letter-spacing:-1px;color:${K.goldFg}">${killerTxt}</span>
+          <span style="color:${K.goldFg}">${killerHtml(S, 34, 28)}</span>
           <span style="font-size:12px;color:${K.goldFg};line-height:1.5">${killerSub}</span></div>
       </section>
       <section style="display:flex;flex-direction:column;gap:10px">
@@ -132,8 +199,9 @@
         <div style="font-size:26px;font-weight:900;color:#fff;letter-spacing:-.5px;line-height:1.3">${esc(short(e.s))}중 ${e.g}학년<br>한눈에 보기</div></div></div>
       <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div style="background:#fff;border-radius:14px;padding:14px 16px"><div style="font-size:12px;font-weight:700;color:${K.mute}">난이도</div><div style="font-size:${S.lv[1].length > 5 ? 18 : 22}px;font-weight:900;color:${K.g};white-space:nowrap">${S.lv[1]}</div><div style="font-size:12px;color:${K.mute}">5단계 중 ${S.lv[0]}</div></div>
-          <div style="background:#fff;border-radius:14px;padding:14px 16px"><div style="font-size:12px;font-weight:700;color:${K.mute}">예상 1등급 컷</div><div style="font-size:22px;font-weight:900;color:${K.g}">${esc(S.cuts['1등급'] || '—')}</div><div style="font-size:12px;color:${K.mute}">AI 추정</div></div>
+          <div style="background:#fff;border-radius:14px;padding:14px 16px"><div style="font-size:12px;font-weight:700;color:${K.mute}">난이도</div><div style="font-size:${levelFont(S.lv[1], 22, 17)}px;font-weight:900;color:${K.g};white-space:nowrap;letter-spacing:-.5px">${S.lv[1]}</div><div style="font-size:12px;color:${K.mute}">5단계 중 ${S.lv[0]}</div></div>
+          ${S.st ? `<div style="background:#fff;border-radius:14px;padding:14px 16px"><div style="font-size:12px;font-weight:700;color:${K.mute}">학교 성적 분포</div><div style="font-size:20px;font-weight:900;color:${K.g};white-space:nowrap">평균 ${esc(S.st.avg)}점</div><div style="font-size:11px;color:${K.mute};line-height:1.45">${hasDist(S.st) ? `A ${Math.round(S.st.dist.A)}% · ` : ''}${esc(S.st.src === 'school' ? '학교 발표' : `${S.st.year} 학교알리미`)}</div></div>`
+          : `<div style="background:#fff;border-radius:14px;padding:14px 16px"><div style="font-size:12px;font-weight:700;color:${K.mute}">실력 + 심화</div><div style="font-size:22px;font-weight:900;color:${K.g}">${S.pts[3] + S.pts[4]}점</div><div style="font-size:12px;color:${K.mute}">등급을 가르는 구간</div></div>`}
         </div>
         <div style="background:#fff;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
           <div style="font-size:15px;font-weight:900;color:${K.g}">어디서 나왔나요</div>
@@ -184,7 +252,7 @@
         ${tile(K.bg2, K.ink, '총 문항', S.n + '문항', `${S.total}점 · ${S.essayN ? '서답형 ' + S.essayN : '모두 객관식'}`)}
         ${tile(K.bg2, K.ink, '가장 큰 단원', Math.round(big0[1]) + '점', esc(big0[0]))}
         ${tile(K.g, '#fff', '실력 + 심화', (S.pts[3] + S.pts[4]) + '점', `${S.cnt[3] + S.cnt[4]}문항 · 등급을 가르는 구간`)}
-        ${tile(K.gold, '#fff', '킬러 문항', S.killers.length ? S.killers.map(i => i[0]).join('·') + '번' : '—', `체감 난이도 ${esc(e.an.level || '—')}`)}
+        ${tile(K.gold, '#fff', '킬러 문항', killerHtml(S, 24, 20), `체감 난이도 ${esc(e.an.level || '—')}`)}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <section style="border:1px solid ${K.line};border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
@@ -219,7 +287,6 @@
     const maxTop = Math.max(40, ...hist.map(h => h.top));
     const mix = ctx.sameCourse(e).slice(0, 5);
     const common = ctx.commonTypes(e).slice(0, 5);
-    const cutRows = ['1등급', '2등급', '3등급', '4등급'].filter(g => S.cuts[g]);
     return `<div class="rpt" data-w="794" style="width:794px;height:1123px;overflow:hidden;box-sizing:border-box;padding:36px 40px 28px;background:#fff;font-family:${FONT};color:${K.ink};display:flex;flex-direction:column;gap:16px">
       <header style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${K.g};padding-bottom:10px">
         <div><div style="font-size:12px;font-weight:700;color:${K.gold};letter-spacing:2px">수도 상세 분석지 · 2</div>
@@ -247,9 +314,13 @@
 <!--SIM-->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;flex:1">
         <section style="border:1px solid ${K.line};border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:9px">
-          <div style="font-size:14px;font-weight:700">예상 등급 컷 <span style="font-weight:500;color:${K.mute};font-size:12px">원점수</span></div>
-          ${cutRows.map((g, k) => { const v = parseInt(S.cuts[g], 10) || 0; return `<div style="display:flex;align-items:center;gap:8px;font-size:12px"><b style="width:40px">${g}</b><div style="flex:1;height:14px;background:#ECF1EF;border-radius:4px;overflow:hidden"><div style="height:100%;width:${v}%;background:${[K.gold, K.g2, K.g3, K.mint][k]}"></div></div><b style="width:38px;text-align:right;font-size:14px">${esc(S.cuts[g])}</b></div>`; }).join('') || `<div style="font-size:12px;color:${K.mute}">등급컷 정보가 없습니다.</div>`}
-          <div style="font-size:10.5px;line-height:1.5;color:${K.mute}">AI 추정치이며 학교 실제 분포와 다를 수 있습니다.</div>
+          ${S.st && hasDist(S.st) ? `<div style="font-size:14px;font-weight:700">학교 성적 분포 <span style="font-weight:500;color:${K.mute};font-size:11px">${esc(statsLabel(S.st))}${S.st.n ? ' · 수강자 ' + esc(S.st.n) + '명' : ''}</span></div>
+          ${LET.map((g, k) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px"><b style="width:18px">${g}</b><div style="flex:1;height:13px;background:#ECF1EF;border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(100, +S.st.dist[g])}%;background:${[K.g, K.g2, K.mint, K.pale, K.gold2][k]}"></div></div><b style="width:44px;text-align:right">${esc(S.st.dist[g])}%</b></div>`).join('')}
+          <div style="font-size:10.5px;line-height:1.5;color:${K.mute}">평균 ${esc(S.st.avg)}점${S.st.sd ? ' · 표준편차 ' + esc(S.st.sd) : ''}${S.st.src === 'school' ? '' : ' · 학기 전체(지필+수행) 기준이라 이번 시험만의 분포와 다를 수 있습니다.'}</div>`
+          : S.st ? `<div style="font-size:14px;font-weight:700">학교 성적</div><div style="font-size:22px;font-weight:900;color:${K.g}">평균 ${esc(S.st.avg)}점</div><div style="font-size:10.5px;color:${K.mute}">${esc(statsLabel(S.st))}</div>`
+          : `<div style="font-size:14px;font-weight:700">난이도별 배점</div>
+          ${[4, 3, 2, 1].map(k => `<div style="display:flex;align-items:center;gap:8px;font-size:12px"><b style="width:30px">${DIFF[k]}</b><div style="flex:1;height:13px;background:#ECF1EF;border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.round(S.pts[k] / (S.total || 100) * 100)}%;background:${DC[k]}"></div></div><b style="width:40px;text-align:right">${S.pts[k]}점</b></div>`).join('')}
+          <div style="font-size:10.5px;line-height:1.5;color:${K.mute}">실력·심화 ${S.pts[3] + S.pts[4]}점이 등급을 가르는 구간입니다.</div>`}
         </section>
         <section style="border:1px solid ${K.line};border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#FAF8F2">
           <div style="font-size:14px;font-weight:700">다음 시험을 위한 준비</div>
@@ -365,6 +436,7 @@
           <span style="font-size:11px;font-weight:700">가장 많이 잃은 단원</span>
           <span style="font-size:${u && strip(u[0]).length > 10 ? 17 : 20}px;font-weight:900;line-height:1.25">${u ? esc(strip(u[0])) : '없음'}</span>
           <span style="font-size:11.5px">${u ? `${Math.round(u[1] * 10) / 10}점 손실 · ${e.an.items.filter(i => i[6] === u[0] && C.lost[i[0]] > 0).length}문항` : '틀린 문항이 없습니다'}</span></div></div>
+      ${posBlock(e, st, C, 'a4')}
       <section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
         <div style="font-size:14px;font-weight:900">문항 지도 <span style="font-size:11px;font-weight:400;color:${K.mute}">막대 = 문항 난이도 · 금색 테두리 = ${esc(st.name)} 학생이 틀린 문항</span></div>
         ${sMap(e, C, 12, 3)}${legend({ cnt: (() => { const c = [0, 0, 0, 0, 0]; e.an.items.forEach(i => c[i[2]]++); return c; })() })}</section>
@@ -386,6 +458,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div style="background:#fff;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;font-weight:700;color:${K.mute}">이번 점수</span><b style="font-size:26px;font-weight:900;color:${K.g}">${C.score}점</b><span style="font-size:11.5px;color:${K.mute}">${st.avg ? `학원생 평균 ${st.avg.score}점` : `${C.total}점 만점`}</span></div>
           <div style="background:${K.goldSoft};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:2px;color:${K.goldFg}"><span style="font-size:12px;font-weight:700">틀린 문항</span><b style="font-size:26px;font-weight:900">${C.wrongNos.length}개</b><span style="font-size:11.5px">${C.wrongNos.length ? C.wrongNos.join(' · ') + '번' : '없음'}</span></div></div>
+        ${posBlock(e, st, C, 'card')}
         ${C.units.length ? `<section style="background:#fff;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px"><b style="font-size:15px;color:${K.g}">어디서 점수를 잃었나요</b>
           ${C.units.slice(0, 3).map(([m, p]) => `<div><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(strip(m))}</span><b style="color:${K.gold}">-${Math.round(p * 10) / 10}점</b></div><div style="height:10px;border-radius:5px;background:#ECF1EF;overflow:hidden;margin-top:3px"><div style="height:100%;width:${Math.round(p / mx * 100)}%;background:${K.gold};border-radius:5px"></div></div></div>`).join('')}</section>` : ''}
         <section style="background:${K.g};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;color:#fff"><b style="font-size:15px;color:${K.gold2}">보완할 점</b>
@@ -409,6 +482,7 @@
         ${tile(K.bg2, K.g, '학원생 평균', A ? A.score + '점' : '—', A ? A.n + '명 기준' : '표시 안 함')}
         ${tile(K.goldSoft, K.goldFg, '틀린 문항', C.wrongNos.length + '개', '잃은 점수 ' + Math.round((C.total - C.score) * 10) / 10 + '점')}
         ${tile(K.bg2, K.g, '지난 시험보다', prev ? (C.score - prev.score >= 0 ? '+' : '') + Math.round((C.score - prev.score) * 10) / 10 + '점' : '—', prev ? esc(prev.label) : '입력된 지난 시험 없음')}</div>
+      ${posBlock(e, st, C, 'a4')}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
           <div style="font-size:14px;font-weight:900">난이도별 맞힌 비율 <span style="font-size:11px;font-weight:400;color:${K.mute}">${A ? '진한 막대 = 학생 · 회색 = 학원생 평균' : ''}</span></div>
@@ -439,8 +513,8 @@
 <!--SIM-->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <section style="border:1px solid ${K.line};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
-          <div style="font-size:14px;font-weight:900">시험별 점수 변화 <span style="font-size:11px;font-weight:400;color:${K.mute}">입력된 시험만</span></div>
-          ${H2.length > 1 ? `<div style="display:flex;align-items:flex-end;gap:12px;height:110px;border-bottom:1px solid #CDD6D2;padding:0 6px">${H2.map(h => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end"><b style="font-size:11px;color:${K.g}">${h.score}</b><div style="width:100%;max-width:48px;height:${Math.round(h.score / mx * 85)}%;border-radius:4px 4px 0 0;background:${h.me ? K.gold : K.g2}"></div></div>`).join('')}</div>
+          <div style="font-size:14px;font-weight:900">시험별 점수 변화 <span style="font-size:11px;font-weight:400;color:${K.mute}">괄호 = 학교 평균 대비 (자료 있는 시험)</span></div>
+          ${H2.length > 1 ? `<div style="display:flex;align-items:flex-end;gap:12px;height:110px;border-bottom:1px solid #CDD6D2;padding:0 6px">${H2.map(h => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end"><b style="font-size:11px;color:${K.g};white-space:nowrap">${h.score}${h.d !== null && h.d !== undefined ? ` <span style="font-weight:500;color:${K.mute}">(${h.d >= 0 ? '+' : ''}${h.d})</span>` : ''}</b><div style="width:100%;max-width:48px;height:${Math.round(h.score / mx * 85)}%;border-radius:4px 4px 0 0;background:${h.me ? K.gold : K.g2}"></div></div>`).join('')}</div>
           <div style="display:flex;gap:12px;padding:0 6px">${H2.map(h => `<span style="flex:1;text-align:center;font-size:10.5px;color:${h.me ? K.goldFg : K.mute};font-weight:${h.me ? 900 : 400}">${esc(h.label)}</span>`).join('')}</div>`
           : `<div style="font-size:12px;color:${K.mute};line-height:1.6">이 학생의 다른 시험 결과를 넣으면 점수 변화가 여기에 그려집니다.</div>`}</section>
 <!--NOTE2-->
@@ -470,6 +544,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div style="border-radius:14px;padding:14px 16px;background:${K.g};color:#fff;display:flex;flex-direction:column"><span style="font-size:12px;opacity:.85">이번 점수</span><b style="font-size:28px;font-weight:900">${C.score}점</b><span style="font-size:12px;opacity:.85">${A ? `학원생 평균 ${A.score}점 · ${A.n}명` : `${C.total}점 만점`}</span></div>
           <div style="border-radius:14px;padding:14px 16px;background:${K.goldSoft};color:${K.goldFg};display:flex;flex-direction:column"><span style="font-size:12px">틀린 문항</span><b style="font-size:28px;font-weight:900">${C.wrongNos.length}개</b><span style="font-size:12px">${C.wrongNos.length ? C.wrongNos.join('·') + '번' : '없음'}</span></div></div>
+        ${posBlock(e, st, C, 'card')}
         ${card(h3('난이도별 맞힌 비율', A ? '진한 막대 = 학생 · 회색 = 학원생 평균' : '') + [1, 2, 3, 4].filter(d => C.rate[d] !== null).map(d => `<div style="display:grid;grid-template-columns:34px 1fr 40px;gap:8px;align-items:center;font-size:13px"><b>${DIFF[d]}</b>
           <div style="display:flex;flex-direction:column;gap:2px"><div style="height:10px;border-radius:5px;background:#ECF1EF;overflow:hidden"><div style="height:100%;width:${C.rate[d]}%;background:${DC[d]}"></div></div>${A && A.rate[d] !== null && A.rate[d] !== undefined ? `<div style="height:4px;border-radius:2px;background:#ECF1EF;overflow:hidden"><div style="height:100%;width:${A.rate[d]}%;background:#B9C6C1"></div></div>` : ''}</div><span style="text-align:right">${C.rate[d]}%</span></div>`).join(''))}
         ${card(`<span style="font-size:12px;font-weight:700">가장 많이 잃은 단원</span><b style="font-size:20px;font-weight:900;line-height:1.3">${u ? esc(strip(u[0])) : '없음'}</b><span style="font-size:12.5px">${u ? `${Math.round(u[1] * 10) / 10}점 손실 · ${it.filter(i => i[6] === u[0] && C.lost[i[0]] > 0).map(i => i[0]).join('·')}번` : '틀린 문항이 없습니다'}</span>`, `background:${K.goldSoft};color:${K.goldFg};gap:4px`)}

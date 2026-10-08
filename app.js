@@ -238,7 +238,8 @@ window.startApp = function (D, ctx) {
     if (!e.an) return MODE === 'phone' ? '' : `<div class="actbar"><button type="button" class="btn" data-reg="${esc(e.id)}">이 시험 문항 분석하기</button>${D.drafts && D.drafts[e.id] ? `<button type="button" class="btn gold" data-draftopen="${esc(e.id)}">검수 대기 열기</button>` : ''}</div>`;
     return `<div class="actbar"><a class="btn" href="#output" data-out="${esc(e.id)}" data-fmt="simple">분석지 보기</a>
       <a class="btn gold" href="#output" data-out="${esc(e.id)}" data-fmt="card">${MODE === 'phone' ? '카톡으로 보내기' : '카톡 카드 만들기'}</a>
-      ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">${e.an.status === 'ai' ? '지금 검수하기' : '문항표 고치기'}</button>`}</div>`;
+      ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">${e.an.status === 'ai' ? '지금 검수하기' : '문항표 고치기'}</button>`}
+      ${ctx ? `<button type="button" class="btn ghost" data-stats="${esc(e.id)}">학교 성적 자료${e.st ? ' ✓' : ''}</button>` : ''}</div>`;
   }
   function bindCommon(root) {
     $$('[data-copy]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); copyText(b, b.dataset.copy); });
@@ -246,6 +247,7 @@ window.startApp = function (D, ctx) {
     $$('[data-reg]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); REG.pickExam(b.dataset.reg); });
     $$('[data-edit]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); REG.editExam(b.dataset.edit); });
     $$('[data-draftopen]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); location.hash = '#register'; });
+    $$('[data-stats]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); openStats(byId[b.dataset.stats]); });
   }
 
   function renderArchive() {
@@ -332,6 +334,58 @@ window.startApp = function (D, ctx) {
     $$('.erow', root).forEach(b => b.onclick = () => { F.open = b.dataset.id; openSheet('exam'); });
   }
 
+  // ---------- 학교 성적 자료 입력 (학교알리미 학기 자료 · 학교 발표) ----------
+  function openStats(e, after) {
+    if (!e) return;
+    const cur = e.st || {}, sib = D.exams.filter(x => x !== e && x.s === e.s && x.y === e.y && x.g === e.g && x.t === e.t);
+    const V = { src: cur.src || 'alimi', year: cur.year || e.y, grade: cur.grade || e.g, sem: cur.sem || e.t, avg: cur.avg ?? '', sd: cur.sd ?? '', n: cur.n ?? '', dist: Object.assign({ A: '', B: '', C: '', D: '', E: '' }, cur.dist || {}) };
+    const sh = $('#sheet');
+    const draw = () => {
+      sh.innerHTML = `<div class="sheet-back" data-close></div><section class="statdlg" role="dialog" aria-modal="true" aria-labelledby="stT">
+        <div class="head"><h2 id="stT">학교 성적 자료 <small>${esc(e.s)} ${e.y} ${examLabel(e)}</small></h2><button type="button" class="linkbtn" data-close>닫기</button></div>
+        <div class="segx" role="radiogroup"><button type="button" role="radio" data-src="alimi" aria-checked="${V.src === 'alimi'}">학교알리미 (학기 전체)</button><button type="button" role="radio" data-src="school" aria-checked="${V.src === 'school'}">학교 발표 (이 시험만)</button></div>
+        ${V.src === 'alimi' ? `<div class="row2"><label class="sel"><span>학년도</span><select id="stY">${[e.y, e.y - 1, e.y - 2, e.y - 3].map(y => `<option ${y === +V.year ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
+          <label class="sel"><span>학년</span><select id="stG">${[1, 2, 3].map(g => `<option value="${g}" ${g === +V.grade ? 'selected' : ''}>${g}학년</option>`).join('')}</select></label>
+          <label class="sel"><span>학기</span><select id="stS">${[1, 2].map(t => `<option value="${t}" ${t === +V.sem ? 'selected' : ''}>${t}학기</option>`).join('')}</select></label></div>` : ''}
+        <div class="row2"><label class="sel"><span>수학 평균</span><input id="stAvg" type="number" step="0.1" value="${esc(V.avg)}" placeholder="예: 71.3"></label>
+          <label class="sel"><span>표준편차</span><input id="stSd" type="number" step="0.1" value="${esc(V.sd)}" placeholder="예: 21.8"></label>
+          <label class="sel"><span>수강자 수 <small>선택</small></span><input id="stN" type="number" value="${esc(V.n)}"></label></div>
+        <label class="sel"><span>성취도 비율 (%) <small>A~E, 모르면 비워 두세요</small></span><div class="g5">${['A', 'B', 'C', 'D', 'E'].map(k => `<span class="dinp"><b>${k}</b><input data-d="${k}" type="number" step="0.1" value="${esc(V.dist[k])}" aria-label="${k} 비율"></span>`).join('')}</div></label>
+        ${V.src === 'alimi' && sib.length ? `<label class="chk"><input type="checkbox" id="stSib" checked> 같은 학기 ${sib.map(x => esc(x.x)).join('·')}고사에도 함께 쓰기</label>` : ''}
+        <p class="callout">${V.src === 'alimi' ? '학교알리미 자료는 학기 전체(지필+수행) 성적입니다. 아직 공시 전인 시험은 작년 같은 학년·학기를 고르세요. 분석지에는 출처가 함께 적힙니다.' : '학교가 이 시험만의 평균·분포를 알려 준 경우입니다. 학교알리미보다 정확합니다.'}</p>
+        <div class="row2">${e.st ? '<button type="button" class="btn ghost danger" id="stDel">자료 지우기</button>' : ''}<button type="button" class="btn" id="stSave">저장</button></div></section>`;
+      sh.hidden = false;
+      const read = () => {
+        const y = $('#stY'); if (y) { V.year = +y.value; V.grade = +$('#stG').value; V.sem = +$('#stS').value; }
+        V.avg = $('#stAvg').value; V.sd = $('#stSd').value; V.n = $('#stN').value;
+        $$('[data-d]', sh).forEach(i => { V.dist[i.dataset.d] = i.value; });
+      };
+      $$('[data-close]', sh).forEach(x => x.onclick = () => { sh.hidden = true; sh.innerHTML = ''; });
+      $$('[data-src]', sh).forEach(b => b.onclick = () => { read(); V.src = b.dataset.src; draw(); });
+      const done = (ids, st) => { ids.forEach(id => { byId[id].st = st; }); sh.hidden = true; sh.innerHTML = ''; toast(st ? '학교 성적 자료를 저장했습니다' : '지웠습니다'); if (after) after(); else route(); };
+      $('#stSave').onclick = async ev => {
+        read();
+        const num = v => v === '' || v === null || v === undefined ? null : +v;
+        if (!(num(V.avg) > 0)) { toast('평균을 넣어 주세요'); return; }
+        const dist = {}; ['A', 'B', 'C', 'D', 'E'].forEach(k => { if (num(V.dist[k]) !== null) dist[k] = num(V.dist[k]); });
+        const nd = Object.keys(dist).length;
+        if (nd && nd < 5) { toast('A~E 비율은 다섯 칸을 모두 넣거나 모두 비워 주세요'); return; }
+        if (nd) { const tot = Object.values(dist).reduce((a, b) => a + b, 0); if (tot < 95 || tot > 105) { toast(`A~E 비율 합이 ${Math.round(tot * 10) / 10}%입니다. 다시 확인해 주세요`); return; } }
+        const st = { src: V.src, avg: num(V.avg), sd: num(V.sd), n: num(V.n), dist: nd ? dist : null, savedAt: new Date().toISOString() };
+        if (V.src === 'alimi') Object.assign(st, { year: V.year, grade: V.grade, sem: V.sem });
+        const ids = [e.id].concat(V.src === 'alimi' && $('#stSib') && $('#stSib').checked ? sib.map(x => x.id) : []);
+        ev.currentTarget.disabled = true;
+        try { if (ctx && ctx.saveExamStats) await ctx.saveExamStats(ids, st); done(ids, st); } catch (er) { toast('저장하지 못했습니다: ' + er.message); ev.currentTarget.disabled = false; }
+      };
+      const dl = $('#stDel'); if (dl) dl.onclick = async () => {
+        if (!confirm('이 시험의 학교 성적 자료를 지울까요?')) return;
+        try { if (ctx && ctx.saveExamStats) await ctx.saveExamStats([e.id], null); done([e.id], null); } catch (er) { toast('지우지 못했습니다: ' + er.message); }
+      };
+      ($('#stAvg') || sh).focus && $('#stAvg').focus();
+    };
+    draw();
+  }
+
   // 휴대폰 시트 (필터 · 시험 상세)
   function openSheet(kind) {
     const sh = $('#sheet');
@@ -412,9 +466,18 @@ window.startApp = function (D, ctx) {
       ${pick}
       <section class="card"><h2>보관 중인 시험 <small>분석 · AI(검수 전) · 원본 · 정답</small></h2><div class="tablewrap flat"><table class="cov"><thead><tr><th></th>${cov.map(y => `<th>${y}</th>`).join('')}</tr></thead>
         <tbody>${slots.map(sl => `<tr><th class="sl">${sl.g}학년 ${sl.t}학기 ${sl.x}</th>${cov.map(y => covCell(y, sl)).join('')}</tr>`).join('')}</tbody></table></div></section>
+      ${statsCard(s)}
       ${body}`;
     bindSchoolPick();
+    $$('[data-stats]').forEach(b => b.onclick = () => openStats(byId[b.dataset.stats]));
     const c = $('#consult'); if (c) c.onclick = () => { consult = true; renderSchool(); };
+  }
+  // 선생님 화면: 학교 성적 자료(학교알리미 등) 모아 보기
+  function statsCard(s) {
+    const ex = D.exams.filter(e => e.s === s && e.st).sort((a, b) => b.y - a.y || b.g - a.g || b.t - a.t || (b.x === '기말') - (a.x === '기말'));
+    if (!ex.length) return `<section class="card"><h2>학교 성적 자료 <small>학교알리미 평균 · A~E 비율</small></h2><p class="dl">아직 넣은 자료가 없습니다. 보관함의 시험 상세에서 '학교 성적 자료'를 눌러 넣으면 분석지와 학생 분석지에 학교 안 위치가 나옵니다.</p></section>`;
+    return `<section class="card"><h2>학교 성적 자료 <small>${ex.length}건 · 눌러서 고치기</small></h2><div class="tablewrap flat"><table><thead><tr><th>시험</th><th>출처</th><th>평균</th><th>표준편차</th><th>A</th><th>E</th></tr></thead><tbody>
+      ${ex.map(e => `<tr><td><button type="button" class="linkbtn" data-stats="${esc(e.id)}">${e.y} ${e.g}-${e.t} ${esc(e.x)}</button></td><td>${e.st.src === 'school' ? '학교 발표' : `학교알리미 ${e.st.year} ${e.st.grade}-${e.st.sem}`}</td><td class="num">${esc(e.st.avg)}</td><td class="num">${esc(e.st.sd ?? '—')}</td><td class="num">${e.st.dist ? esc(e.st.dist.A) + '%' : '—'}</td><td class="num">${e.st.dist ? esc(e.st.dist.E) + '%' : '—'}</td></tr>`).join('')}</tbody></table></div></section>`;
   }
   function bindSchoolPick() {
     $$('.chip[data-s]').forEach(b => b.onclick = () => { curSchool = b.dataset.s; store.set('school', curSchool); renderSchool(); });
@@ -692,7 +755,7 @@ window.startApp = function (D, ctx) {
   }
   let SIM = null;
   const REG = window.SudoRegister({
-    D, ctx, byId, A, REC, schools, years, esc, toast, $, $$, DIFF, BEH, ROLE, ROOT_WIN, MAIN4, short, applySaved,
+    D, ctx, byId, A, REC, schools, years, esc, toast, $, $$, DIFF, BEH, ROLE, ROOT_WIN, MAIN4, short, applySaved, openStats,
     mode: () => MODE,
     go: v => { if ((location.hash || '#archive').slice(1) !== v) location.hash = '#' + v; },
     openExam: id => { const e = byId[id]; F.school = e.s; F.course = '전체'; F.year = '전체'; F.exam = '전체'; F.state = '전체'; F.q = ''; F.open = id; saveF(); if (location.hash === '#archive') route(); else location.hash = '#archive'; },

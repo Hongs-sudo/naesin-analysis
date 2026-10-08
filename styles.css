@@ -598,3 +598,10 @@ body[data-mode="phone"] .job .dl { display: none }
   .rpt[data-a4] { zoom: .995 }
 }
 @media print { [data-screen-only] { display: none !important } }
+/* 학교 성적 자료 입력 창 */
+.statdlg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; background: var(--surface); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; color: var(--fg) }
+.statdlg .sel input, .statdlg .sel select { min-height: 40px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); padding: 0 10px; font-size: 14px; font-weight: 400; color: var(--fg); width: 100% }
+.statdlg .callout { margin: 0; font-size: 12.5px; line-height: 1.6 }
+.g5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px }
+.dinp { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line-2); border-radius: 10px; padding: 0 8px; background: var(--surface) }
+.dinp b { color: var(--brand) } .dinp input { border: 0 !important; min-height: 38px; width: 100%; padding: 0 !important; background: transparent }

@@ -29,7 +29,7 @@ window.SudoStudents = function (H) {
     const st = D.students[sid], r = D.results[rid(sid, eid)], e = byId[eid];
     if (!st || !r || !e || !e.an) return null;
     const hist = resultsOf(sid).map(x => ({ x, e: byId[x.exam] })).filter(o => o.e && o.e.an)
-      .sort((a, b) => order(b.e, a.e)).map(o => ({ label: `${o.e.g}-${o.e.t} ${o.e.x}`, score: window.SudoReport.studentCalc(o.e, o.x).score, me: o.e.id === eid }));
+      .sort((a, b) => order(b.e, a.e)).map(o => { const sc = window.SudoReport.studentCalc(o.e, o.x).score; return { label: `${o.e.g}-${o.e.t} ${o.e.x}`, score: sc, me: o.e.id === eid, d: o.e.st && +o.e.st.avg > 0 ? Math.round((sc - o.e.st.avg) * 10) / 10 : null }; });
     const upto = hist.findIndex(h => h.me);
     return { name: st.name, res: r, avg: avgOn ? average(eid) : null, hist: upto >= 0 ? hist.slice(0, upto + 1) : hist };
   }

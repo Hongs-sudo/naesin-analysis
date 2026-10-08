@@ -323,7 +323,7 @@ window.SudoRegister = function (H) {
         <label class="kpi sel"><span>시험 난이도</span><select id="rvLevel"><option value="">고르기</option>${LEVELS.map(l => `<option ${l === d.level ? 'selected' : ''}>${l}</option>`).join('')}</select><small>제안: ${suggestLevel(rows)} (실력·심화 배점 기준)</small></label>
       </div>
       ${d.warnings && d.warnings.length ? `<div class="callout">${d.warnings.map(w => esc(w)).join('<br>')}</div>` : ''}
-      <details class="card cuts"><summary>등급컷 넣기 <small>선택 · 학교 알리미 등에서 확인한 값</small></summary><div class="cutrow">${['1등급', '2등급', '3등급', '4등급', '5등급'].map(k => `<label class="sel"><span>${k}</span><input data-cut="${k}" value="${esc((d.cuts || {})[k] || '')}" placeholder="예: 89점"></label>`).join('')}</div></details>
+      <section class="card cuts"><div class="head"><h2>학교 성적 자료 <small>선택 · 학교알리미 학기 자료나 학교 발표 평균·A~E 비율</small></h2>${byId[d.id] ? `<button type="button" class="btn ghost sm" id="rvStats">${byId[d.id].st ? '고치기 ✓' : '넣기'}</button>` : '<span class="dl">새 시험은 저장한 뒤 보관함에서 넣을 수 있습니다</span>'}</div></section>
       <div class="tablewrap rvwrap"><table class="rvtbl">
         <thead><tr><th>그림</th><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
         <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id, showAns)).join('')}</tbody></table></div>
@@ -357,7 +357,7 @@ window.SudoRegister = function (H) {
     $('#rvTemp').onclick = async ev => { ev.currentTarget.disabled = true; try { await saveDraftRemote(d); toast('임시 저장했습니다. 검수 대기에서 이어서 볼 수 있습니다'); } catch (e) { toast('저장하지 못했습니다: ' + e.message); } ev.currentTarget.disabled = false; };
     $('#rvSave').onclick = ev => saveFinal(ev.currentTarget);
     $('#rvLevel').onchange = ev => { d.level = ev.target.value; touch(); };
-    $$('[data-cut]').forEach(inp => inp.onchange = () => { d.cuts = d.cuts || {}; if (inp.value.trim()) d.cuts[inp.dataset.cut] = inp.value.trim(); else delete d.cuts[inp.dataset.cut]; touch(); });
+    const rs = $('#rvStats'); if (rs) rs.onclick = () => H.openStats(byId[d.id], () => renderReview());
     const ra = $('#rvAns'); if (ra) ra.onclick = () => {
       const m = d.meta, txt = `${m.school} ${m.year} ${m.grade}-${m.sem} ${m.exam} 정답\n` + d.rows.slice().sort((x, y) => x.no - y.no).map(r => `${r.no}. ${r.ans || '?'}`).join('\n');
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('정답표를 복사했습니다'), () => toast('복사하지 못했습니다'));
