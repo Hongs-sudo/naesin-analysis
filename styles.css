@@ -284,7 +284,7 @@ body[data-mode="phone"] .mtop { display: flex; align-items: center; justify-cont
 .mtop span { color: var(--side-fg); font-size: 12px }
 body[data-mode="phone"] .main { padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px)); gap: 14px }
 body[data-mode="phone"] h1 { font-size: 24px }
-body[data-mode="phone"] .tabbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(8px + env(safe-area-inset-bottom, 0px)) }
+body[data-mode="phone"] .tabbar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(8px + env(safe-area-inset-bottom, 0px)) }
 .tabbar a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; font-size: 11.5px; color: var(--muted); text-decoration: none }
 .tabbar a.on { color: var(--brand); font-weight: 900 }
 .searchrow { display: flex; gap: 8px } .searchrow input { flex: 1; min-width: 0 }
@@ -435,7 +435,7 @@ body[data-mode="tab"] .cutrow { grid-template-columns: repeat(3, minmax(0, 1fr))
 
 /* ===== 인쇄 ===== */
 @media print {
-  .side, .mtop, .tabbar, .head, .outctl, .outact, .copy1, #toast { display: none !important }
+  .side, .mtop, .tabbar, .head, .outctl, .outact, .copy1, #toast, .aiwarn { display: none !important }
   body, .main, .preview { background: #FFFFFF !important; padding: 0 !important; margin: 0 !important }
   .rpt { transform: none !important }
   .pg { width: auto !important; height: auto !important; box-shadow: none !important; overflow: visible !important }
@@ -443,3 +443,137 @@ body[data-mode="tab"] .cutrow { grid-template-columns: repeat(3, minmax(0, 1fr))
   @page { size: A4; margin: 0 }
 }
 .outact .notebox { flex-basis: 100%; width: 100% }
+
+/* ---------- 공통: 입력 칸 ---------- */
+label.sel { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--muted); min-width: 0; flex: 1 1 0 }
+label.sel small { font-weight: 400 }
+.pregrid .sel input, .pregrid .sel select, .addform .sel input, .addform .sel select, .addform .sel textarea, .stgrid .sel input, .stgrid .sel select, .stgrid .sel textarea, .libgrid select, .linkrow select {
+  min-height: 40px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); padding: 0 10px; font-size: 14px; font-weight: 400; color: var(--fg); width: 100%; font-family: inherit }
+.addform textarea, .stgrid textarea { padding: 8px 10px !important; line-height: 1.6; resize: vertical }
+.dl.tip, .card .dl { white-space: normal; line-height: 1.6 }
+.goldt { color: var(--gold-fg) }
+.btn.danger { color: var(--gold-fg); border-color: var(--gold) }
+.chips { display: flex; gap: 6px; flex-wrap: wrap }
+.pill.gold { background: var(--gold-soft); color: var(--gold-fg) }
+.tile.goldt2 { background: var(--gold-soft); border-color: var(--gold-soft) } .tile.goldt2 b, .tile.goldt2 span { color: var(--gold-fg) }
+
+/* 문항 그림 · 영역 잡기 창 */
+.boxpick { position: fixed; inset: 0; z-index: 80; background: rgba(8,20,18,.6); display: flex; align-items: center; justify-content: center; padding: 16px }
+.bp-in { background: var(--surface); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; max-width: min(920px, 100%); max-height: 100%; width: 100% }
+.bp-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap }
+.bp-nav { display: flex; align-items: center; gap: 6px; font-size: 13px }
+.bp-stage { position: relative; overflow: auto; align-self: center; max-height: calc(100vh - 120px); touch-action: none; cursor: crosshair; user-select: none }
+.bp-stage img { display: block; max-width: 100%; height: auto; max-height: calc(100vh - 130px); -webkit-user-drag: none }
+.bp-stage.zoom { cursor: default; touch-action: auto; background: #fff; border-radius: 8px }
+.bp-rect { position: absolute; border: 2px solid var(--gold); background: rgba(154,106,31,.12); border-radius: 3px; pointer-events: none }
+.thc { width: 96px }
+.thumb { display: block; width: 88px; height: 56px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; overflow: hidden; cursor: zoom-in }
+.thumb img { width: 100%; height: 100%; object-fit: contain; display: block }
+.thc .linkbtn { font-size: 11.5px; padding: 2px 0 }
+.qtx { font-size: 11.5px; color: var(--muted); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+
+/* 검수 전 표시 */
+.aiwarn { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; background: var(--gold-soft); border: 1px solid #E7D3AE; color: var(--gold-fg) }
+.aiwarn > div { flex: 1 1 320px; display: flex; flex-direction: column; gap: 2px } .aiwarn span { font-size: 12.5px; line-height: 1.6 }
+.itbl tr.low td { background: var(--warn-soft) } .itbl tr.low td:first-child { box-shadow: inset 3px 0 0 var(--gold) }
+.cov .c-ai { background: var(--gold-soft); color: var(--gold-fg); font-weight: 700; text-align: center; font-size: 12px }
+.guard { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100% - 32px)); background: var(--surface); border: 1.5px solid var(--gold); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px; color: var(--fg) }
+.guard b { font-size: 16px; color: var(--gold-fg) } .guard span { font-size: 13.5px; line-height: 1.65; color: var(--fg-2) }
+.linkrow { display: flex; gap: 6px } .linkrow .btn { flex: 1 } .linkrow select { width: auto !important; flex: 0 0 auto; min-height: 44px }
+
+/* 미리 분석 */
+.pregrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 18px; align-items: start }
+body[data-mode="tab"] .pregrid { grid-template-columns: minmax(0, 1fr) }
+.folderok { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--brand-soft); font-size: 13px }
+.folderok > b { color: var(--brand) } .folderok > span { flex: 1 1 260px; color: var(--muted); line-height: 1.6 }
+.folderok.off { background: var(--surface-2) }
+.fgroup { display: flex; flex-direction: column; gap: 8px } .fgroup .lab { font-size: 12px; font-weight: 700; color: var(--muted) }
+.presum { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.6 }
+.presum span { color: var(--muted) }
+.btnrow .btn { min-height: 52px; font-size: 15px }
+.phases { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px }
+.phase { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); text-align: left; cursor: pointer }
+.phase.on { background: var(--brand-soft); border-color: var(--d2) }
+.ptag { flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--brand); color: var(--brand-fg) }
+.pt { flex: 1; display: flex; flex-direction: column } .pt small { color: var(--muted); font-size: 12px }
+.pst { font-size: 12px; font-weight: 700; color: var(--brand); white-space: nowrap }
+.exd { border-top: 1px solid var(--line); padding-top: 12px } .exd summary { font-size: 13px; font-weight: 700; cursor: pointer; color: var(--gold-fg) }
+.exl { display: flex; flex-direction: column; gap: 4px; margin-top: 10px }
+.exl > div { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 5px 8px; border-radius: 6px; background: var(--warn-soft) }
+.fillbox { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px } .fillbox span { color: var(--muted); font-size: 12.5px; line-height: 1.6 } .fillbox .btn { align-self: flex-start }
+.pbar { height: 12px; border-radius: 6px; background: var(--surface-2); overflow: hidden; display: flex } .pbar i { background: var(--brand) } .pbar i.run { background: var(--d2) }
+.pcnt { display: flex; gap: 16px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap } .pcnt b { color: var(--brand) }
+.tip { padding: 8px 12px; border-radius: 8px; background: var(--surface-2); font-size: 12.5px !important; margin: 0 }
+.jlist { display: flex; flex-direction: column }
+.job { display: grid; grid-template-columns: minmax(0, 1fr) 150px 96px; gap: 10px; align-items: center; padding: 9px 4px; border-top: 1px solid var(--line); font-size: 13.5px }
+.job b { color: var(--brand) } .job .dl { white-space: normal; font-size: 12px }
+.jst { justify-self: end; font-size: 12px; padding: 3px 10px; border-radius: 99px; white-space: nowrap; background: var(--surface-2); color: var(--muted) }
+.jst.done { background: var(--gold-soft); color: var(--gold-fg); font-weight: 700 } .jst.run { background: var(--brand-soft); color: var(--brand); font-weight: 700 }
+.jst.fail { background: var(--surface); color: var(--gold-fg); border: 1px solid var(--gold); font-weight: 700 }
+
+/* 자료실 */
+.libgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 18px; align-items: start }
+body[data-mode="tab"] .libgrid { grid-template-columns: minmax(0, 1fr) }
+.srctabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px }
+.srctabs button { min-height: 52px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); text-align: left; cursor: pointer; display: flex; flex-direction: column; color: var(--fg-2) }
+.srctabs button b { font-size: 13.5px } .srctabs button small { font-size: 11px; color: var(--muted) }
+.srctabs button[aria-selected="true"] { background: var(--brand); border-color: var(--brand); color: var(--brand-fg) } .srctabs button[aria-selected="true"] small { color: var(--brand-fg); opacity: .8 }
+.foundbox { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--d2); background: var(--brand-soft) }
+.foundbox small { color: var(--muted) }
+.flist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto }
+.frow2 { display: grid; grid-template-columns: minmax(0, 1fr) 110px 110px; gap: 6px; align-items: center; background: var(--surface); border-radius: 8px; padding: 2px 8px }
+.frow2 .chk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 } .frow2 .chk { min-width: 0 } .frow2 select { min-height: 34px !important; font-size: 12.5px !important; padding: 0 6px !important }
+.chk.sm { font-size: 12px; min-height: 34px }
+.mlist { display: flex; flex-direction: column }
+.mrow { display: flex; gap: 10px; align-items: center; padding: 10px 8px; border: 0; border-top: 1px solid var(--line); background: var(--surface); cursor: pointer; text-align: left; color: inherit }
+.mrow.on { background: var(--brand-soft); border-radius: 8px }
+.mrow .ext { flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--brand); color: var(--brand-fg) }
+.mt { flex: 1; min-width: 0; display: flex; flex-direction: column } .mt b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap } .mt small { font-size: 12px; color: var(--muted) }
+.addform { display: flex; flex-direction: column; gap: 12px }
+.drop.sm { padding: 16px 12px }
+.mset summary { cursor: pointer; font-size: 13px; color: var(--muted) } .mset .addform { margin-top: 10px }
+.revgrid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start }
+.pgimg { position: relative; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; background: #fff }
+.pgimg img { display: block; width: 100% }
+.pbox { position: absolute; border: 2px solid var(--d3); border-radius: 3px; background: rgba(46,117,102,.06) }
+.pbox span { position: absolute; left: -2px; top: -2px; font-size: 10px; font-weight: 700; font-style: normal; padding: 1px 5px; border-radius: 3px 0 3px 0; color: #fff; background: var(--d3) }
+.pbox.low { border-color: var(--gold); background: rgba(154,106,31,.08) } .pbox.low span { background: var(--gold) }
+.pbox.skip { opacity: .35 }
+.pgnone { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 14px; border: 1px dashed var(--line-2); border-radius: 8px; font-size: 12.5px; color: var(--muted); line-height: 1.6 }
+.plist { display: flex; flex-direction: column }
+.prow { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--line) }
+.prow.need { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--gold); padding-left: 6px }
+.prow.skip { opacity: .45 }
+.pth { display: flex; flex-direction: column; gap: 4px; align-items: flex-start }
+.pmain { display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+.ptop { display: flex; gap: 8px; align-items: center; flex-wrap: wrap } .ptop b { color: var(--brand) }
+.pmain select { min-height: 34px !important; font-size: 12.5px !important }
+.navrow { justify-content: space-between; align-items: center } .navrow .btn { flex: 0 1 auto }
+
+/* 학생 */
+.stgrid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start }
+body[data-mode="tab"] .stgrid { grid-template-columns: 260px minmax(0, 1fr) }
+body[data-mode="phone"] .stgrid, body[data-mode="phone"] .libgrid, body[data-mode="phone"] .pregrid { grid-template-columns: minmax(0, 1fr) }
+.slist { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto }
+.srow { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 8px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; color: inherit }
+.srow.on { border: 2px solid var(--brand); background: var(--brand-soft) }
+.srow b { font-size: 14.5px } .srow small { font-size: 12px; color: var(--muted); grid-column: 1 } .srow .pill { grid-row: 1 / 3; grid-column: 2; align-self: center }
+.stHead { align-items: flex-end } .stHead .sel { flex: 0 1 340px }
+.numgrid { display: grid; gap: 6px }
+.nbtn { min-height: 52px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 15px; color: var(--fg); padding: 2px }
+.nbtn small { display: block; font-size: 11px; min-height: 14px; color: var(--muted) }
+.nbtn.es { background: var(--surface-2); border-style: dashed }
+.nbtn.on { background: var(--gold); border: 1px solid var(--gold); color: #fff } .nbtn.on small { color: #fff }
+.pickrow2 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--gold-soft); font-size: 13px; color: var(--gold-fg) }
+.essays { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px }
+.einp { display: flex; align-items: center; gap: 6px; font-weight: 400; color: var(--fg) } .einp input { width: 72px !important }
+.kpis4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px }
+body[data-mode="phone"] .kpis4 { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+.kpi small { font-size: 11.5px; color: var(--muted) } .kpi.dark small { color: var(--brand-fg); opacity: .85 }
+.kpi b.sm2 { font-size: 16px; line-height: 1.3 }
+.stfoot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 14px }
+.stfoot .row2 { flex-wrap: wrap }
+body[data-mode="phone"] .numgrid { grid-template-columns: repeat(6, minmax(0, 1fr)) !important }
+body[data-mode="phone"] .job { grid-template-columns: minmax(0, 1fr) 90px }
+body[data-mode="phone"] .job .dl { display: none }
+.head > .segx { flex: 0 1 auto } .head > .segx button { flex: 0 0 auto; padding: 0 16px }

@@ -46,6 +46,7 @@
   firebase.firestore().collection('shared').doc(id).get().then(snap => {
     if (!snap.exists) return fail('링크가 만료되었거나 없는 분석지입니다.<br>학원에 문의해 주세요.');
     const d = snap.data();
+    if (d.expiresAt && new Date(d.expiresAt) < new Date()) return fail('열람 기간이 끝난 분석지입니다.<br>학원에 다시 요청해 주세요.');
     document.title = '수학도서관 · ' + (d.title || '내신 분석');
     wrap.innerHTML = (d.html || []).map(h => '<section class="page">' + h + '</section>').join('')
       + '<p class="foot">1:1 명품 맞춤 수학학원 수학도서관</p>';
@@ -65,7 +66,7 @@
     if (document.querySelector('.page.card')) { const f = document.querySelector('.foot'); if (f) f.remove(); }
     addEventListener('resize', fit);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
-  }).catch(e => fail('분석지를 불러오지 못했습니다. (' + (e.code || e.message) + ')'));
+  }).catch(e => fail(e.code === 'permission-denied' ? '열람 기간이 끝난 분석지입니다.<br>학원에 다시 요청해 주세요.' : '분석지를 불러오지 못했습니다. (' + (e.code || e.message) + ')'));
 })();
 </script>
 </body>

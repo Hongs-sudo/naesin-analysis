@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body>
 <div class="app">
@@ -27,6 +27,8 @@
       <a href="#archive" data-v="archive"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v4H4zM5 9v10h14V9M10 13h4"/></svg><span class="lbl">시험지 보관함</span><span class="lbs">보관함</span></a>
       <a href="#school" data-v="school"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg><span class="lbl">학교별 분석</span><span class="lbs">학교</span></a>
       <a href="#types" data-v="types"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg><span class="lbl">단원 · 유형 목록</span><span class="lbs">유형</span></a>
+      <a href="#library" data-v="library"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5-.8 3 15.6-3.6.8z"/></svg><span class="lbl">자료실</span><span class="lbs">자료</span></a>
+      <a href="#students" data-v="students"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg><span class="lbl">학생</span><span class="lbs">학생</span></a>
       <a href="#output" data-v="output"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 12h6M9 16h6"/></svg><span class="lbl">분석지 만들기</span><span class="lbs">분석지</span></a>
       <a href="#register" data-v="register"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg><span class="lbl">시험 등록</span><span class="lbs">등록</span></a>
       <a href="#factory" data-v="factory"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z"/></svg><span class="lbl">문제 제작소</span><span class="lbs">제작소</span> <span class="soon">5단계</span></a>
@@ -40,21 +42,26 @@
     <a href="#school" data-v="school"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>학교</a>
     <a href="#types" data-v="types"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>유형</a>
     <a href="#output" data-v="output"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 12h6M9 16h6"/></svg>분석지</a>
+    <a href="#students" data-v="students"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>학생</a>
   </nav>
 </div>
 <div id="sheet" hidden></div>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="report.js?v=13"></script>
-<script src="ai.js?v=9"></script>
-<script src="register.js?v=7"></script>
-<script src="app.js?v=13"></script>
+<script src="report.js?v=20"></script>
+<script src="ai.js?v=20"></script>
+<script src="pages.js?v=20"></script>
+<script src="register.js?v=20"></script>
+<script src="similar.js?v=20"></script>
+<script src="library.js?v=20"></script>
+<script src="students.js?v=20"></script>
+<script src="app.js?v=20"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__bip = e; dispatchEvent(new Event('bip-ready')); });
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
-<script src="boot.js?v=12"></script>
+<script src="boot.js?v=20"></script>
 </body>
 </html>

@@ -1,4 +1,16 @@
 // 수도 내신분석 — 화면 (PC · 아이패드 · 휴대폰)
+// 문항 한 줄(저장 모양) → 화면이 쓰는 배열
+// [0 no, 1 pts, 2 diff, 3 beh, 4 course, 5 big, 6 mid, 7 type, 8 catalog idx, 9 essay, 10 ans, 11 sol, 12 q(핵심 내용), 13 ik(그림 키), 14 conf, 15 pg, 16 box]
+window.sudoItemArr = function (i, idx) {
+  const DI = { 기본: 1, 응용: 2, 실력: 3, 심화: 4 }, BI = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
+  return [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course || '', i.big || '', i.mid || '', i.type || '',
+    i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || '',
+    i.q || '', i.ik || '', typeof i.conf === 'number' ? i.conf : 1, i.pg || 0, i.box || null];
+};
+window.sudoAnalysis = function (a, idx) {
+  return { level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,
+    status: a.status === 'ai' ? 'ai' : 'checked', items: (a.items || []).map(i => window.sudoItemArr(i, idx)) };
+};
 window.startApp = function (D, ctx) {
   const ROOT_WIN = 'N:\\공유\\공유받은\\2026 중등부\\A. 내신대비\\B. 학교별 기출문제\\';
   const MAIN4 = ['목운중', '신목중', '양정중', '월촌중'];
@@ -47,6 +59,7 @@ window.startApp = function (D, ctx) {
   }
   const diffText = items => { const c = diffCounts(items); return `기본 ${c[1]} · 응용 ${c[2]} · 실력 ${c[3]} · 심화 ${c[4]}`; };
   function stateOf(e) {
+    if (e.an && e.an.status === 'ai') return '<span class="pill gold">AI · 검수 전</span>';
     if (e.an) return '<span class="pill ok">분석 완료</span>';
     if (!e.p) return '<span class="pill warn">원본 없음</span>';
     return '<span class="pill raw">분석 전</span>';
@@ -145,7 +158,8 @@ window.startApp = function (D, ctx) {
       if (F.course !== '전체' && `${e.g}-${e.t}` !== F.course) return false;
       if (F.year !== '전체' && String(e.y) !== String(F.year)) return false;
       if (F.exam !== '전체' && e.x !== F.exam) return false;
-      if (F.state === '분석 완료' && !e.an) return false;
+      if (F.state === '분석 완료' && (!e.an || e.an.status === 'ai')) return false;
+      if (F.state === '검수 전' && !(e.an && e.an.status === 'ai')) return false;
       if (F.state === '분석 전' && (e.an || !e.p)) return false;
       if (F.state === '정답 없음' && e.a) return false;
       if (F.state === '원본 없음' && e.p) return false;
@@ -165,7 +179,7 @@ window.startApp = function (D, ctx) {
       <div class="frow"><span class="lab">과정</span>${chips('course', ['전체', '1-1', '1-2', '2-1', '2-2', '3-1', '3-2'])}</div>
       <div class="frow"><span class="lab">고사</span>${chips('exam', ['전체', '중간', '기말'])}</div>
       <div class="frow"><span class="lab">연도</span>${MODE === 'phone' ? chips('year', ['전체', ...years.slice(0, 5)]) : `<select class="yearSel" aria-label="연도">${['전체', ...years].map(y => `<option ${String(F.year) === String(y) ? 'selected' : ''}>${y}</option>`).join('')}</select>`}</div>
-      <div class="frow"><span class="lab">상태</span>${chips('state', ['전체', '분석 완료', '분석 전', '정답 없음', '원본 없음'])}</div>`;
+      <div class="frow"><span class="lab">상태</span>${chips('state', ['전체', '분석 완료', '검수 전', '분석 전', '정답 없음', '원본 없음'])}</div>`;
   }
   function bindFilters(root, rerender) {
     $$('.chip[data-f]', root).forEach(b => b.onclick = () => { F[b.dataset.f] = b.dataset.v; F.limit = 40; saveF(); rerender(); });
@@ -185,7 +199,7 @@ window.startApp = function (D, ctx) {
   }
   function itemTable(e) {
     return `<div class="tablewrap"><table class="itbl"><thead><tr><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형</th></tr></thead><tbody>
-      ${e.an.items.map(i => `<tr><td class="num">${i[0]}${i[9] ? ' <span class="tag">서답</span>' : ''}</td><td class="num">${i[1]}</td>
+      ${e.an.items.map(i => `<tr class="${e.an.status === 'ai' && (i[14] < 0.7 || !i[1]) ? 'low' : ''}"><td class="num">${i[0]}${i[9] ? ' <span class="tag">서답</span>' : ''}</td><td class="num">${i[1]}</td>
       <td><i class="dsw" style="background:var(--d${i[2]})"></i>${DIFF[i[2]]}</td><td>${BEH[i[3]] || ''}</td><td>${esc(i[6] || '—')}</td><td>${esc(i[7] || '—')}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
@@ -194,7 +208,7 @@ window.startApp = function (D, ctx) {
     let body;
     if (e.an) {
       const k = killers(e);
-      body = `<div class="kpis">
+      body = aiBanner(e) + `<div class="kpis">
           <div class="kpi"><span>난이도</span><b>${esc(LV[e.an.level] || e.an.level || '—')}</b></div>
           <div class="kpi dark"><span>실력 + 심화</span><b>${topPts(e)}점</b></div>
           <div class="kpi gold"><span>킬러 문항</span><b>${k.length ? k.map(i => i[0]).join('·') + '번' : '—'}</b></div></div>
@@ -205,11 +219,18 @@ window.startApp = function (D, ctx) {
     }
     return `${body}<section class="card"><h2>원본 파일</h2><div class="files">${filesHtml(e)}</div>${e.n.length ? `<div class="dl">메모: ${esc(e.n.join(' · '))}</div>` : ''}</section>`;
   }
+  function aiBanner(e) {
+    if (!e.an || e.an.status !== 'ai') return '';
+    const src = e.an.source || {}, low = e.an.items.filter(i => i[14] < 0.7 || !i[1]).length, tot = Math.round(e.an.items.reduce((a, i) => a + (i[1] || 0), 0) * 10) / 10;
+    const ml = ((window.SudoAI.MODELS[src.provider] || []).find(x => x[0] === src.model) || [0, src.model || 'AI'])[1].replace(/ \(.*\)$/, '');
+    return `<div class="aiwarn"><div><b>AI가 분석한 결과입니다 · 아직 검수 전</b><span>${esc(ml)} · ${esc((src.at || '').slice(0, 10))} 읽음 · ${e.an.items.length}문항 · 확인할 문항 ${low}개 · 배점 합계 ${tot}점</span></div>
+      ${MODE === 'phone' ? '' : `<button type="button" class="btn sm" data-edit="${esc(e.id)}">지금 검수하기</button>`}</div>`;
+  }
   function examActions(e) {
     if (!e.an) return MODE === 'phone' ? '' : `<div class="actbar"><button type="button" class="btn" data-reg="${esc(e.id)}">이 시험 문항 분석하기</button>${D.drafts && D.drafts[e.id] ? `<button type="button" class="btn gold" data-draftopen="${esc(e.id)}">검수 대기 열기</button>` : ''}</div>`;
     return `<div class="actbar"><a class="btn" href="#output" data-out="${esc(e.id)}" data-fmt="simple">분석지 보기</a>
       <a class="btn gold" href="#output" data-out="${esc(e.id)}" data-fmt="card">${MODE === 'phone' ? '카톡으로 보내기' : '카톡 카드 만들기'}</a>
-      ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">문항표 고치기</button>`}</div>`;
+      ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">${e.an.status === 'ai' ? '지금 검수하기' : '문항표 고치기'}</button>`}</div>`;
   }
   function bindCommon(root) {
     $$('[data-copy]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); copyText(b, b.dataset.copy); });
@@ -227,8 +248,8 @@ window.startApp = function (D, ctx) {
     const tiles = `<div class="tiles">
         <div class="tile"><span>등록 시험</span><b>${D.exams.length}건</b><span>${years[years.length - 1]}~${years[0]}년 · ${schools.length}개 학교</span></div>
         <div class="tile"><span>원본 시험지 있음</span><b>${D.exams.filter(e => e.p).length}건</b><span>정답·배점표까지 ${D.exams.filter(e => e.p && e.a).length}건</span></div>
-        <div class="tile dark"><span>문항 분석 완료</span><b>${nAn}건</b><span>${nItems}문항 · 단원·유형까지 분류</span></div>
-        <div class="tile"><span>분석 기다리는 시험</span><b>${D.exams.filter(e => !e.an && e.p).length}건</b><span>${Object.keys(D.drafts || {}).length ? `검수 대기 ${Object.keys(D.drafts).length}건 · ` : ''}시험 등록에서 AI로 분석</span></div></div>`;
+        <div class="tile dark"><span>문항 분석</span><b>${nAn}건</b><span>${nItems}문항${D.exams.some(e => e.an && e.an.status === 'ai') ? ` · 검수 전 ${D.exams.filter(e => e.an && e.an.status === 'ai').length}건 포함` : ' · 단원·유형까지 분류'}</span></div>
+        <div class="tile"><span>분석 기다리는 시험</span><b>${D.exams.filter(e => !e.an && e.p).length}건</b><span>${Object.keys(D.drafts || {}).length ? `검수 대기 ${Object.keys(D.drafts).length}건 · ` : ''}${MODE === 'pc' ? '<a href="#register" id="goPre" class="lnk">미리 분석으로 한꺼번에</a>' : '시험 등록에서 AI로 분석'}</span></div></div>`;
     if (MODE === 'tab') return archiveTab(rows);
     $('#main').innerHTML = `
       <div class="head"><div><div class="kicker">MYBOX '학교별 기출문제' 폴더를 시험 단위로 정리했습니다</div><h1>시험지 보관함</h1></div></div>
@@ -244,11 +265,12 @@ window.startApp = function (D, ctx) {
             <td class="sch">${esc(e.s)}</td><td class="num">${e.y}</td><td>${examLabel(e)}</td><td><div class="tags">${tags(e) || '<span class="tag">없음</span>'}</div></td>
             <td>${e.an ? diffBar(e.an.items) + `<div class="dl">${diffText(e.an.items)}</div>` : '<span class="dl">분석 전</span>'}</td><td>${stateOf(e)}</td></tr>
             ${open ? `<tr class="detail"><td colspan="6"><div class="det"><div><h2>원본 파일 <small>${esc(e.s)} ${e.y} ${examLabel(e)}</small></h2><div class="files">${filesHtml(e)}</div>${e.n.length ? `<div class="dl">메모: ${esc(e.n.join(' · '))}</div>` : ''}</div>
-              <div style="flex:3 1 520px"><div class="head"><h2>문항표</h2>${examActions(e)}</div>${e.an ? itemTable(e) + `<div class="dl">배점 합계 ${e.an.items.reduce((s, i) => s + i[1], 0)}점 · 체감 난이도 ${esc(e.an.level || '—')} · 서답형 ${e.an.essay}문항</div>` : `<div class="empty">아직 문항 분석 전입니다. ${D.drafts && D.drafts[e.id] ? 'AI가 읽은 문항표가 검수 대기 중입니다.' : '‘이 시험 문항 분석하기’를 누르면 AI가 문항표를 채웁니다.'}</div>`}</div></div></td></tr>` : ''}`;
+              <div style="flex:3 1 520px">${aiBanner(e)}<div class="head"><h2>문항표</h2>${examActions(e)}</div>${e.an ? itemTable(e) + `<div class="dl">배점 합계 ${e.an.items.reduce((s, i) => s + i[1], 0)}점 · 체감 난이도 ${esc(e.an.level || '—')} · 서답형 ${e.an.essay}문항</div>` : `<div class="empty">아직 문항 분석 전입니다. ${D.drafts && D.drafts[e.id] ? 'AI가 읽은 문항표가 검수 대기 중입니다.' : '‘이 시험 문항 분석하기’를 누르면 AI가 문항표를 채웁니다.'}</div>`}</div></div></td></tr>` : ''}`;
         }).join('') || '<tr><td colspan="6" class="empty">조건에 맞는 시험이 없습니다. 필터를 하나 풀어 보세요.</td></tr>'}</tbody></table></div>
       ${rows.length > F.limit ? `<button type="button" class="more" id="more">${Math.min(40, rows.length - F.limit)}건 더 보기 (남은 ${rows.length - F.limit}건)</button>` : ''}`;
     const root = $('#main');
     bindFilters(root, renderArchive); bindSearch(renderArchive); bindCommon(root);
+    const gp = $('#goPre'); if (gp) gp.onclick = ev => { ev.preventDefault(); REG.openPre(); };
     const more = $('#more'); if (more) more.onclick = () => { F.limit += 40; renderArchive(); };
     $$('tr.row', root).forEach(tr => {
       const t = () => { F.open = F.open === tr.dataset.id ? null : tr.dataset.id; renderArchive(); };
@@ -339,7 +361,7 @@ window.startApp = function (D, ctx) {
     if (consult && st && MODE !== 'phone') return renderConsult(s, st);
     const cov = years.slice().reverse().filter(y => all.some(e => e.y === y));
     const covCell = (y, sl) => { const e = all.find(e => e.y === y && e.g === sl.g && e.t === sl.t && e.x === sl.x);
-      if (!e) return '<td class="c-n" title="자료 없음"></td>'; if (e.an) return '<td class="c-a">분석</td>'; if (e.p) return '<td class="c-p">원본</td>'; return '<td class="c-x">정답</td>'; };
+      if (!e) return '<td class="c-n" title="자료 없음"></td>'; if (e.an && e.an.status === 'ai') return '<td class="c-ai" title="AI 분석 · 검수 전">AI</td>'; if (e.an) return '<td class="c-a">분석</td>'; if (e.p) return '<td class="c-p">원본</td>'; return '<td class="c-x">정답</td>'; };
     const slots = SLOTS.filter(sl => all.some(e => e.g === sl.g && e.t === sl.t && e.x === sl.x));
     const pick = `<div class="frow seg">${MAIN4.map(x => `<button type="button" class="chip" data-s="${x}" aria-pressed="${x === s}">${MODE === 'phone' ? short(x) : x}</button>`).join('')}
       <select id="schSel" aria-label="다른 학교 고르기"><option value="">다른 학교…</option>${schools.filter(x => !MAIN4.includes(x)).map(x => `<option ${x === s ? 'selected' : ''}>${x}</option>`).join('')}</select></div>`;
@@ -361,10 +383,10 @@ window.startApp = function (D, ctx) {
       body = `
       <div class="tiles">
         <div class="tile"><span>보관 중인 시험</span><b>${all.length}건</b><span>${cov[0]}~${cov[cov.length - 1]}년</span></div>
-        <div class="tile dark"><span>문항 분석 완료</span><b>${N}건</b><span>${P.reduce((a, p) => a + p.n, 0)}문항</span></div>
+        <div class="tile dark"><span>문항 분석</span><b>${N}건</b><span>${P.reduce((a, p) => a + p.n, 0)}문항${P.some(p => p.e.an.status === 'ai') ? ` · 검수 전 ${P.filter(p => p.e.an.status === 'ai').length}건 포함` : ''}</span></div>
         <div class="tile"><span>형식</span><b>${P.some(p => p.essay) ? '서답형 있음' : '객관식만'}</b><span>평균 ${(P.reduce((a, p) => a + p.n, 0) / N).toFixed(1)}문항</span></div>
         <div class="tile"><span>실력·심화 평균</span><b>${Math.round(P.reduce((a, p) => a + p.top, 0) / N)}점</b><span>등급을 가르는 구간</span></div></div>
-      <section class="card"><h2>${esc(short(s))}중 출제 습관 <small>분석한 ${N}개 시험에서 자동으로 뽑음</small></h2>${habits(s).map(h => `<div class="habit"><span class="k">${h[0]}</span><span>${esc(h[1])}</span></div>`).join('')}</section>
+      <section class="card"><h2>${esc(short(s))}중 출제 습관 <small>분석한 ${N}개 시험에서 자동으로 뽑음${P.some(p => p.e.an.status === 'ai') ? ` · <span class="goldt">검수 전 ${P.filter(p => p.e.an.status === 'ai').length}건 포함</span>` : ''}</small></h2>${habits(s).map(h => `<div class="habit"><span class="k">${h[0]}</span><span>${esc(h[1])}</span></div>`).join('')}</section>
       <section class="card"><div class="head"><h2>문항 지도 누적 <small>색 = 난이도 · 진한 테두리 = 객관식 최고 배점 · 흰 점 = 서답형</small></h2>${legendHtml()}</div><div class="map">${nums}${map}</div></section>
       <div class="grid2">
         <section class="card"><h2>실력 · 심화 배점</h2><div class="hbars">${P.map(p => `<div class="hb"><span>${p.e.g}-${p.e.t} ${p.e.x}</span><div><i style="width:${Math.round(p.top / topMax * 100)}%"></i></div><b>${p.top}점</b></div>`).join('')}</div></section>
@@ -380,7 +402,7 @@ window.startApp = function (D, ctx) {
       <div class="head"><div><div class="kicker">시험이 쌓일수록 학교의 출제 습관이 보입니다</div><h1>${MODE === 'phone' ? '학교별 분석' : esc(s) + ' 누적 분석'}</h1></div>
         ${st && MODE !== 'phone' ? '<button type="button" class="btn ghost" id="consult">상담 모드</button>' : ''}</div>
       ${pick}
-      <section class="card"><h2>보관 중인 시험 <small>분석 · 원본 · 정답</small></h2><div class="tablewrap flat"><table class="cov"><thead><tr><th></th>${cov.map(y => `<th>${y}</th>`).join('')}</tr></thead>
+      <section class="card"><h2>보관 중인 시험 <small>분석 · AI(검수 전) · 원본 · 정답</small></h2><div class="tablewrap flat"><table class="cov"><thead><tr><th></th>${cov.map(y => `<th>${y}</th>`).join('')}</tr></thead>
         <tbody>${slots.map(sl => `<tr><th class="sl">${sl.g}학년 ${sl.t}학기 ${sl.x}</th>${cov.map(y => covCell(y, sl)).join('')}</tr>`).join('')}</tbody></table></div></section>
       ${body}`;
     bindSchoolPick();
@@ -449,81 +471,169 @@ window.startApp = function (D, ctx) {
   const analyzedExams = [];
   function anRefresh() { analyzedExams.length = 0; analyzedExams.push(...D.exams.filter(e => e.an).sort((a, b) => b.y - a.y || a.s.localeCompare(b.s, 'ko') || a.g - b.g || a.t - b.t || (a.x === '기말') - (b.x === '기말'))); }
   anRefresh();
-  const OUT = Object.assign({ id: (analyzedExams[0] || {}).id, fmt: 'simple' }, store.get('output', {}));
+  const OUT = Object.assign({ id: (analyzedExams[0] || {}).id, fmt: 'simple', kind: 'exam', sid: null, sx: null, sim: false, avg: true, days: 30 }, store.get('output', {}));
   if (!byId[OUT.id] || !byId[OUT.id].an) OUT.id = (analyzedExams[0] || {}).id;
   const NOTE = Object.assign({ on: false, student: '', text: '', by: '' }, store.get('note', {}));
   const saveNote = () => store.set('note', { on: NOTE.on, by: NOTE.by });
   const FMT = [['simple', '간결 분석지', 'A4 1장 · 학부모 기본형'], ['card', '카톡 카드', '휴대폰 화면 한 장'], ['detail', '상세 분석지', 'A4 2쪽 · 단원·비교까지']];
+  const SFMT = [['simple', '간결 분석지', 'A4 1장'], ['card', '카톡 카드', '휴대폰 화면 한 장'], ['detail', '상세 분석지', 'A4 2쪽']];
+  const SIMC = {};
+  let noteFor = null;
+  const isAI = e => e && e.an && e.an.status === 'ai';
+  const lowConf = e => e.an.items.filter(i => i[14] < 0.7 || !i[1]).length;
+  // 검수 전 시험을 내보낼 때마다 묻는 창
+  function guard(e, act) {
+    if (!isAI(e)) return act();
+    const sh = $('#sheet');
+    sh.innerHTML = `<div class="sheet-back" data-close></div><section class="guard" role="dialog" aria-modal="true" aria-labelledby="gT">
+      <b id="gT">검수 전 시험입니다</b><span>${esc(e.s)} ${e.y} ${examLabel(e)}은 AI가 분석했고 아직 확인하지 않았습니다.${lowConf(e) ? ` AI가 자신 없다고 한 문항이 ${lowConf(e)}개 있습니다.` : ''} 그래도 보낼까요?</span>
+      <div class="row2"><button type="button" class="btn ghost" id="gFix">검수 먼저 하기</button><button type="button" class="btn gold" id="gGo">그래도 보내기</button></div></section>`;
+    sh.hidden = false;
+    const close = () => { sh.hidden = true; sh.innerHTML = ''; };
+    $$('[data-close]', sh).forEach(x => x.onclick = close);
+    $('#gFix').onclick = () => { close(); REG.editExam(e.id); };
+    $('#gGo').onclick = () => { close(); act(); };
+    $('#gGo').focus();
+  }
+  function studentPick() {
+    const studs = STU.studs().filter(s => STU.resultsOf(s.id).some(r => byId[r.exam] && byId[r.exam].an));
+    if (!studs.length) return { studs };
+    if (!studs.some(s => s.id === OUT.sid)) OUT.sid = studs[0].id;
+    const rs = STU.resultsOf(OUT.sid).map(r => byId[r.exam]).filter(x => x && x.an).sort((a, b) => b.y - a.y || b.g - a.g || b.t - a.t || (b.x === '기말') - (a.x === '기말'));
+    if (!rs.some(x => x.id === OUT.sx)) OUT.sx = rs[0].id;
+    return { studs, rs };
+  }
   function renderOutput() {
-    store.set('output', { id: OUT.id, fmt: OUT.fmt });
-    const e = byId[OUT.id];
+    store.set('output', { id: OUT.id, fmt: OUT.fmt, kind: OUT.kind, sid: OUT.sid, sx: OUT.sx, sim: OUT.sim, avg: OUT.avg, days: OUT.days });
+    const stu = OUT.kind === 'student';
+    let e, extra = { simOn: OUT.sim }, sp = null, sd = null;
+    if (stu) {
+      sp = studentPick();
+      if (!sp.rs) {
+        $('#main').innerHTML = `<div class="head"><div><div class="kicker">학부모님께 보내는 분석지</div><h1>분석지 만들기</h1></div>${kindTabs()}</div><section class="card"><p class="callout">아직 시험 결과를 넣은 학생이 없습니다. ‘학생’ 화면에서 학생을 등록하고 틀린 번호를 넣으면 여기서 학생 분석지를 만들 수 있습니다.</p><a class="btn" href="#students">학생 화면으로</a></section>`;
+        bindKind(); return;
+      }
+      e = byId[OUT.sx]; sd = STU.reportData(OUT.sid, OUT.sx, OUT.avg); extra.student = sd;
+      if (noteFor !== OUT.sid + OUT.sx) { noteFor = OUT.sid + OUT.sx; NOTE.student = sd.name; NOTE.text = ''; }
+    } else {
+      e = byId[OUT.id];
+      if (noteFor && noteFor !== 'exam') { noteFor = 'exam'; NOTE.student = ''; NOTE.text = ''; }
+    }
     if (!e) { $('#main').innerHTML = '<div class="empty">분석된 시험이 없습니다.</div>'; return; }
-    const pages = window.SudoReport.build(OUT.fmt, e, rctx, NOTE);
+    const simKey = stu ? `s|${OUT.sid}|${OUT.sx}|${(sd.res.wrong || []).join(',')}|${JSON.stringify(sd.res.partial || {})}` : `e|${e.id}`;
+    if (OUT.sim) extra.sim = SIMC[simKey] || null;
+    const pages = window.SudoReport.build(OUT.fmt, e, rctx, NOTE, extra);
     const canShare = !!(navigator.canShare && window.File && (() => { try { return navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }); } catch (_) { return false; } })());
+    const ai = analyzedExams.filter(isAI), chk = analyzedExams.filter(x => !isAI(x));
+    const st = stu ? D.students[OUT.sid] : null;
     $('#main').innerHTML = `
-      <div class="head"><div><div class="kicker">학부모님께 보내는 분석지</div><h1>분석지 만들기</h1></div></div>
+      <div class="head"><div><div class="kicker">학부모님께 보내는 분석지</div><h1>분석지 만들기</h1></div>${kindTabs()}</div>
       <div class="outctl">
-        <label class="sel"><span>시험</span><select id="outExam">${analyzedExams.map(x => `<option value="${esc(x.id)}" ${x.id === e.id ? 'selected' : ''}>${esc(x.s)} ${x.y} ${examLabel(x)}</option>`).join('')}</select></label>
-        <div class="fmts" role="tablist">${FMT.map(f => `<button type="button" role="tab" class="fmt" data-fmt="${f[0]}" aria-selected="${f[0] === OUT.fmt}"><b>${f[1]}</b><small>${f[2]}</small></button>`).join('')}</div>
+        ${stu ? `<label class="sel"><span>학생</span><select id="outStu">${sp.studs.map(x => `<option value="${esc(x.id)}" ${x.id === OUT.sid ? 'selected' : ''}>${esc(x.name)} · ${esc(short(x.school))}중 ${x.grade}학년</option>`).join('')}</select></label>
+          <label class="sel"><span>시험</span><select id="outSx">${sp.rs.map(x => `<option value="${esc(x.id)}" ${x.id === OUT.sx ? 'selected' : ''}>${esc(x.s)} ${x.y} ${examLabel(x)}${isAI(x) ? ' · 검수 전' : ''}</option>`).join('')}</select></label>`
+        : `<label class="sel"><span>시험</span><select id="outExam">${chk.length ? `<optgroup label="검수 완료">${chk.map(x => `<option value="${esc(x.id)}" ${x.id === e.id ? 'selected' : ''}>${esc(x.s)} ${x.y} ${examLabel(x)}</option>`).join('')}</optgroup>` : ''}
+          ${ai.length ? `<optgroup label="검수 전 (AI 분석)">${ai.map(x => `<option value="${esc(x.id)}" ${x.id === e.id ? 'selected' : ''}>${esc(x.s)} ${x.y} ${examLabel(x)} · 검수 전</option>`).join('')}</optgroup>` : ''}</select></label>`}
+        <div class="fmts" role="tablist">${(stu ? SFMT : FMT).map(f => `<button type="button" role="tab" class="fmt" data-fmt="${f[0]}" aria-selected="${f[0] === OUT.fmt}"><b>${f[1]}</b><small>${f[2]}</small></button>`).join('')}</div>
       </div>
+      ${isAI(e) ? `<div class="aiwarn" role="status"><div><b>이 시험은 AI가 분석했고 아직 검수 전입니다</b><span>${lowConf(e) ? `AI가 자신 없다고 한 문항이 ${lowConf(e)}개 있습니다. ` : ''}학부모님께 보내기 전에 확인을 권합니다. 분석지 그림에는 ‘검수 전’ 글자가 들어가지 않습니다.</span></div>${MODE === 'phone' ? '' : `<button type="button" class="btn ghost sm" data-edit="${esc(e.id)}">검수하러 가기</button>`}</div>` : ''}
       <div class="outwrap">
         <section class="preview" id="preview">${pages.map((p, i) => `<div class="pgwrap" data-pg="${i}"><div class="pg">${p}</div>${pages.length > 1 ? `<button type="button" class="btn sm copy1" data-pg="${i}">${i + 1}쪽 이미지 복사하기</button>` : ''}</div>`).join('')}</section>
         <aside class="outact">
+          <section class="notebox">
+            <label class="chk"><input type="checkbox" id="simOn" ${OUT.sim ? 'checked' : ''}> <b>유사문항 3개 넣기</b> <small>${stu ? '틀린 문항 기준' : '고난도 문항 기준'}</small></label>
+            ${OUT.sim ? `<button type="button" class="linkbtn" id="simAgain">유사문항 다시 찾기</button>` : ''}
+            ${stu ? `<label class="chk"><input type="checkbox" id="avgOn" ${OUT.avg ? 'checked' : ''}> <b>학원생 평균 비교</b> <small>${sd.avg ? sd.avg.n + '명' : '같은 시험 입력 없음'}</small></label>` : ''}
+          </section>
           <section class="notebox">
             <label class="chk"><input type="checkbox" id="noteOn" ${NOTE.on ? 'checked' : ''}> <b>선생님 의견 넣기</b> <small>학생마다 따로</small></label>
             ${NOTE.on ? `<div class="noteform">
               <label class="nsel"><span>학생 이름</span><input id="noteStudent" value="${esc(NOTE.student)}" placeholder="예: 김민준 (비우면 표시 안 함)"></label>
               <label class="nsel"><span>의견</span><textarea id="noteText" rows="5" placeholder="이번 시험에서 잘한 점, 아쉬운 점, 다음 시험까지 할 일">${esc(NOTE.text)}</textarea></label>
               <label class="nsel"><span>작성</span><input id="noteBy" value="${esc(NOTE.by)}" placeholder="예: 수학도서관 홍길동 선생님"></label>
-              <button type="button" class="linkbtn" id="noteClear">다음 학생 (이름·의견 비우기)</button>
+              ${stu ? '' : '<button type="button" class="linkbtn" id="noteClear">다음 학생 (이름·의견 비우기)</button>'}
             </div>` : ''}
           </section>
           <button type="button" class="btn big" id="copyImg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>이미지 복사하기</button>
           <p class="dl">복사한 뒤 카톡이나 문자 입력창을 길게 눌러 <b>붙여넣기</b> 하세요.${pages.length > 1 ? ' 두 쪽이면 쪽마다 복사합니다.' : ''}</p>
           ${canShare ? '<button type="button" class="btn ghost" id="shareImg">공유 (카톡 바로 보내기)</button>' : ''}
-          ${ctx ? `<button type="button" class="btn ghost" id="linkShare">링크로 보내기 <small>휴대폰 화면 가득</small></button>` : ''}
+          ${ctx ? `<div class="linkrow"><button type="button" class="btn ghost" id="linkShare">링크로 보내기 <small>휴대폰 화면 가득</small></button>${stu ? `<select id="linkDays" aria-label="링크 열람 기간">${[7, 30, 90].map(d => `<option value="${d}" ${+OUT.days === d ? 'selected' : ''}>${d}일 뒤 만료</option>`).join('')}</select>` : ''}</div>` : ''}
           <button type="button" class="btn ghost" id="saveImg">이미지로 저장</button>
           ${MODE === 'phone' ? '' : '<button type="button" class="btn ghost" id="printIt">인쇄 · PDF</button>'}
-          <p class="dl">‘다음 시험 준비’ 글은 분석지 위에서 눌러 바로 고칠 수 있습니다. 고친 글은 복사·저장에 그대로 들어갑니다.</p>
+          <p class="dl">${stu ? '‘보완할 점’' : '‘다음 시험 준비’'} 글은 분석지 위에서 눌러 바로 고칠 수 있습니다. 고친 글은 복사·저장에 그대로 들어갑니다.${isAI(e) ? ' 검수 전 시험은 복사·링크·저장·인쇄할 때마다 확인 창을 띄웁니다.' : ''}</p>
         </aside>
       </div>`;
     $$('#preview .rpt').forEach(r => window.SudoReport.fit(r));
     fitPreview();
+    bindKind(); bindCommon($('#main'));
     $('#preview').addEventListener('input', ev => { const r = ev.target.closest('.rpt'); if (r) { window.SudoReport.fit(r); } });
-    $('#outExam').onchange = ev => { OUT.id = ev.target.value; renderOutput(); };
+    const oe = $('#outExam'); if (oe) oe.onchange = ev => { OUT.id = ev.target.value; renderOutput(); };
+    const os = $('#outStu'); if (os) os.onchange = ev => { OUT.sid = ev.target.value; OUT.sx = null; renderOutput(); };
+    const ox = $('#outSx'); if (ox) ox.onchange = ev => { OUT.sx = ev.target.value; renderOutput(); };
+    $('#simOn').onchange = ev => { OUT.sim = ev.target.checked; renderOutput(); };
+    const sa = $('#simAgain'); if (sa) sa.onclick = () => { delete SIMC[simKey]; runSim(simKey, e, sd, true); renderOutput(); };
+    const ao = $('#avgOn'); if (ao) ao.onchange = ev => { OUT.avg = ev.target.checked; renderOutput(); };
+    const ld = $('#linkDays'); if (ld) ld.onchange = ev => { OUT.days = +ev.target.value; store.set('output', Object.assign(store.get('output', {}), { days: OUT.days })); };
     $('#noteOn').onchange = ev => { NOTE.on = ev.target.checked; saveNote(); renderOutput(); };
     const liveNote = () => { $$('#preview .rpt').forEach(r => { window.SudoReport.setNote(r, NOTE); window.SudoReport.fit(r); }); fitPreview(); };
     [['#noteStudent', 'student'], ['#noteText', 'text'], ['#noteBy', 'by']].forEach(([sel, k]) => { const el = $(sel); if (el) el.oninput = () => { NOTE[k] = el.value.trim(); if (k === 'by') saveNote(); liveNote(); }; });
     const nc = $('#noteClear'); if (nc) nc.onclick = () => { NOTE.student = ''; NOTE.text = ''; $('#noteStudent').value = ''; $('#noteText').value = ''; liveNote(); $('#noteStudent').focus(); };
     $$('.fmt').forEach(b => b.onclick = () => { OUT.fmt = b.dataset.fmt; renderOutput(); });
-    const name = i => `${NOTE.on && NOTE.student ? NOTE.student + '_' : ''}${short(e.s)}중_${e.y}_${e.g}-${e.t}_${e.x}_${FMT.find(f => f[0] === OUT.fmt)[1]}${pages.length > 1 ? '_' + (i + 1) + '쪽' : ''}.png`;
+    if (OUT.sim && !SIMC[simKey]) runSim(simKey, e, sd);
+    const fname = (stu ? SFMT : FMT).find(f => f[0] === OUT.fmt)[1];
+    const who = stu ? sd.name + '_' : NOTE.on && NOTE.student ? NOTE.student + '_' : '';
+    const name = i => `${who}${short(e.s)}중_${e.y}_${e.g}-${e.t}_${e.x}_${stu ? '학생_' : ''}${fname}${pages.length > 1 ? '_' + (i + 1) + '쪽' : ''}.png`;
     const node = i => $$('#preview .rpt')[i];
     const run = (btn, p, okMsg) => {
       const old = btn.innerHTML; btn.disabled = true; btn.classList.add('busy');
       Promise.resolve(p).then(r => r === 'quiet' ? 0 : toast(r === 'copied' ? okMsg : r === 'shared' ? '공유 창을 열었습니다' : r === 'saved' ? '이 기기에서는 복사가 안 돼서 이미지로 저장했습니다' : '취소했습니다'))
         .catch(err => toast('이미지를 만들지 못했습니다: ' + err.message)).finally(() => { btn.disabled = false; btn.classList.remove('busy'); btn.innerHTML = old; });
     };
-    $('#copyImg').onclick = ev => run(ev.currentTarget, window.SudoReport.copyImage(node(0)), pages.length > 1 ? '1쪽을 복사했습니다. 카톡에 붙여넣기 하세요' : '복사했습니다. 카톡이나 문자에 붙여넣기 하세요');
-    $$('.copy1').forEach(b => b.onclick = ev => run(ev.currentTarget, window.SudoReport.copyImage(node(+b.dataset.pg)), `${+b.dataset.pg + 1}쪽을 복사했습니다`));
-    const sh = $('#shareImg'); if (sh) sh.onclick = ev => run(ev.currentTarget, window.SudoReport.shareImage(node(0), name(0)), '');
-    $('#saveImg').onclick = ev => run(ev.currentTarget, (async () => { for (let i = 0; i < pages.length; i++) await window.SudoReport.saveImage(node(i), name(i)); return 'saved_ok'; })().then(() => { toast('이미지를 저장했습니다'); return 'quiet'; }), '');
-    const ls = $('#linkShare'); if (ls) ls.onclick = () => {
+    const G = (fn) => ev => { const btn = ev.currentTarget; guard(e, () => fn(btn)); };
+    $('#copyImg').onclick = G(btn => run(btn, window.SudoReport.copyImage(node(0)), pages.length > 1 ? '1쪽을 복사했습니다. 카톡에 붙여넣기 하세요' : '복사했습니다. 카톡이나 문자에 붙여넣기 하세요'));
+    $$('.copy1').forEach(b => b.onclick = G(btn => run(btn, window.SudoReport.copyImage(node(+b.dataset.pg)), `${+b.dataset.pg + 1}쪽을 복사했습니다`)));
+    const sh = $('#shareImg'); if (sh) sh.onclick = G(btn => run(btn, window.SudoReport.shareImage(node(0), name(0)), ''));
+    $('#saveImg').onclick = G(btn => run(btn, (async () => { for (let i = 0; i < pages.length; i++) await window.SudoReport.saveImage(node(i), name(i)); return 'saved_ok'; })().then(() => { toast('이미지를 저장했습니다'); return 'quiet'; }), ''));
+    const ls = $('#linkShare'); if (ls) ls.onclick = G(() => {
       // 분석지를 지금 모습(고친 글 포함) 그대로 공개용 링크로 저장. 주소는 길고 무작위라 아는 사람만 열 수 있음
       const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789', rnd = crypto.getRandomValues(new Uint8Array(18));
       const id = [...rnd].map(x => a[x % a.length]).join('');
       const html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); return c.outerHTML; });
-      const title = `${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석`;
+      const title = `${stu ? sd.name + ' 학생 · ' : ''}${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석`;
       const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'r.html#' + id;
-      const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, createdAt: new Date().toISOString() });
+      const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, kind: stu ? 'student' : 'exam', createdAt: new Date().toISOString() }, stu ? +OUT.days : 0);
+      const msg = `링크를 복사했습니다${stu ? ` (${OUT.days}일 뒤 만료)` : ''}. 카톡에 붙여넣기 하세요`;
       saved.then(() => {}, err => toast('링크를 만들지 못했습니다: ' + err.message));
       if (MODE === 'phone' && navigator.share) {
         navigator.share({ title: '수학도서관 · ' + title, url }).catch(() => {});
       } else if (navigator.clipboard && window.ClipboardItem) {
         navigator.clipboard.write([new ClipboardItem({ 'text/plain': saved.then(() => new Blob([url], { type: 'text/plain' })) })])
-          .then(() => toast('링크를 복사했습니다. 카톡에 붙여넣기 하세요'), () => saved.then(() => copyText(null, url, '링크를 복사했습니다. 카톡에 붙여넣기 하세요')));
-      } else saved.then(() => copyText(null, url, '링크를 복사했습니다. 카톡에 붙여넣기 하세요'));
-    };
-    const pr = $('#printIt'); if (pr) pr.onclick = () => { document.body.classList.add('printing'); window.print(); setTimeout(() => document.body.classList.remove('printing'), 500); };
+          .then(() => toast(msg), () => saved.then(() => copyText(null, url, msg)));
+      } else saved.then(() => copyText(null, url, msg));
+    });
+    const pr = $('#printIt'); if (pr) pr.onclick = G(() => { document.body.classList.add('printing'); window.print(); setTimeout(() => document.body.classList.remove('printing'), 500); });
+  }
+  function kindTabs() {
+    return `<div class="segx" role="tablist" aria-label="분석지 종류"><button type="button" role="tab" data-kind="exam" aria-selected="${OUT.kind !== 'student'}">학교 시험 분석지</button><button type="button" role="tab" data-kind="student" aria-selected="${OUT.kind === 'student'}">학생 분석지</button></div>`;
+  }
+  function bindKind() { $$('[data-kind]').forEach(b => b.onclick = () => { OUT.kind = b.dataset.kind; renderOutput(); }); }
+  // 유사문항: 찾은 뒤 미리보기의 그 칸만 바꿔 끼운다 (고친 글 유지)
+  const SIMRUN = {};
+  function runSim(key, e, sd, force) {
+    if (SIMRUN[key]) return; SIMRUN[key] = 1;
+    const targets = sd ? SIM.studentTargets(e, window.SudoReport.studentCalc(e, sd.res).lost) : SIM.examTargets(e);
+    SIM.find(targets, { exclude: e.id, force }).then(r => { SIMC[key] = r; }, err => { SIMC[key] = []; toast('유사문항을 찾지 못했습니다: ' + err.message); }).finally(() => {
+      delete SIMRUN[key];
+      if ((location.hash || '') !== '#output' || !OUT.sim) return;
+      const cur = OUT.kind === 'student' ? STU.reportData(OUT.sid, OUT.sx, OUT.avg) : null;
+      const e2 = cur ? byId[OUT.sx] : byId[OUT.id]; if (e2 !== e) return;
+      const fresh = window.SudoReport.build(OUT.fmt, e, rctx, NOTE, { simOn: true, sim: SIMC[key], student: cur });
+      const tmp = document.createElement('div');
+      $$('#preview .rpt').forEach((r, i) => {
+        tmp.innerHTML = fresh[i] || ''; const nw = tmp.querySelector('[data-sim]'), old = r.querySelector('[data-sim]');
+        if (nw && old) { old.replaceWith(nw); window.SudoReport.fit(r); }
+      });
+      fitPreview();
+    });
   }
   function fitPreview() {
     const pv = $('#preview'); if (!pv) return;
@@ -539,27 +649,34 @@ window.startApp = function (D, ctx) {
   // ---------- 준비 중 ----------
   // ---------- 5. 시험 등록 (4단계) ----------
   function applySaved({ id, exam, analysis, newTypes }) {
-    const DI = { 기본: 1, 응용: 2, 실력: 3, 심화: 4 }, BI = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
     (newTypes || []).forEach(t => D.catalog.push([t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']));
     const idx = {}; D.catalog.forEach((c, i) => { idx[c[0]] = i; });
     if (exam && !byId[id]) {
       const e = { id, s: exam.school, m: exam.main ? 1 : 0, y: exam.year, g: exam.grade, t: exam.sem, x: exam.exam, p: 1, a: 0, sc: 0, r: 0, f: exam.formats, fl: [], pr: '', n: exam.notes };
       D.exams.push(e); byId[id] = e;
     }
-    A[id] = { level: analysis.level, cuts: analysis.cuts, essay: analysis.essay, source: analysis.source,
-      items: analysis.items.map(i => [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course, i.big, i.mid, i.type, idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || '']) };
+    A[id] = window.sudoAnalysis(analysis, idx);
     byId[id].an = A[id];
-    listsRefresh(); recRefresh(); anRefresh();
+    listsRefresh(); recRefresh(); anRefresh(); if (SIM) SIM.reset();
+    Object.keys(SIMC).forEach(k => delete SIMC[k]);
     const sc = $('#sideCount'); if (sc) sc.textContent = `${D.exams.length}개 시험 · ${schools.length}개 학교`;
   }
+  let SIM = null;
   const REG = window.SudoRegister({
     D, ctx, byId, A, REC, schools, years, esc, toast, $, $$, DIFF, BEH, ROLE, ROOT_WIN, MAIN4, short, applySaved,
     mode: () => MODE,
     go: v => { if ((location.hash || '#archive').slice(1) !== v) location.hash = '#' + v; },
     openExam: id => { const e = byId[id]; F.school = e.s; F.course = '전체'; F.year = '전체'; F.exam = '전체'; F.state = '전체'; F.q = ''; F.open = id; saveF(); if (location.hash === '#archive') route(); else location.hash = '#archive'; },
-    diffBarCounts: c => `<div class="dbar" role="img" aria-label="기본 ${c[1]}, 응용 ${c[2]}, 실력 ${c[3]}, 심화 ${c[4]}">${[1, 2, 3, 4].filter(k => c[k]).map(k => `<i style="flex:${c[k]};background:var(--d${k})"></i>`).join('')}</div>`
+    diffBarCounts: c => `<div class="dbar" role="img" aria-label="기본 ${c[1]}, 응용 ${c[2]}, 실력 ${c[3]}, 심화 ${c[4]}">${[1, 2, 3, 4].filter(k => c[k]).map(k => `<i style="flex:${c[k]};background:var(--d${k})"></i>`).join('')}</div>`,
+    imgCache: ctx && ctx.imgCache
   });
-  window.addEventListener('beforeunload', ev => { if (REG.busy()) { ev.preventDefault(); ev.returnValue = ''; } });
+  const H2 = { D, ctx, byId, esc, toast, $, $$, DIFF, BEH, short, schools, reg: REG, imgCache: ctx && ctx.imgCache, mode: () => MODE,
+    aiSettings: () => REG.aiSettings(), simReset: () => { SIM.reset(); Object.keys(SIMC).forEach(k => delete SIMC[k]); },
+    openStudentReport: (sid, eid, avg) => { OUT.kind = 'student'; OUT.sid = sid; OUT.sx = eid; if (avg !== undefined) OUT.avg = avg; if (OUT.fmt !== 'simple' && OUT.fmt !== 'card' && OUT.fmt !== 'detail') OUT.fmt = 'simple'; location.hash = '#output'; } };
+  SIM = window.SudoSimilar(H2);
+  const LIB = window.SudoLibrary(H2);
+  const STU = window.SudoStudents(H2);
+  window.addEventListener('beforeunload', ev => { if (REG.busy() || LIB.busy()) { ev.preventDefault(); ev.returnValue = ''; } });
 
   const SOON = {
     factory: ['문제 제작소', '5단계', '학교별 누적 분석을 바탕으로 기본 2회분, 추가 2회분까지 모의고사를 만듭니다.']
@@ -573,10 +690,11 @@ window.startApp = function (D, ctx) {
   let lastView = null;
   function route() {
     let v = (location.hash || '#archive').slice(1) || 'archive';
-    if (MODE === 'phone' && (SOON[v] || v === 'register')) v = 'archive';
+    if (MODE === 'phone' && (SOON[v] || v === 'register' || v === 'library')) v = 'archive';
     if (v !== 'school') consult = false;
     $$('[data-v]').forEach(a => { const on = a.dataset.v === v; a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-    if (v === 'school') renderSchool(); else if (v === 'types') renderTypes(); else if (v === 'output') renderOutput(); else if (v === 'register') REG.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
+    if (v === 'school') renderSchool(); else if (v === 'types') renderTypes(); else if (v === 'output') renderOutput(); else if (v === 'register') REG.render();
+    else if (v === 'library') LIB.render(); else if (v === 'students') STU.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
     if (v !== lastView) window.scrollTo(0, 0);
     lastView = v;
   }

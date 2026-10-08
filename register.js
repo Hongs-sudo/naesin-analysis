@@ -13,8 +13,11 @@ window.SudoRegister = function (H) {
     pick: 'archive', school: MAIN4[0], onlyRaw: true, examId: null,
     meta: { school: '', year: new Date().getFullYear(), grade: 2, sem: 2, exam: '중간' },
     files: [], busy: null, draft: null, withAns: (() => { try { return localStorage.getItem('sudo.withAns') === '1'; } catch (_) { return false; } })(), ai: Object.assign({}, AI_DEFAULT, D.ai || {}),
-    batch: { map: null, list: [], running: false, stop: false, school: '4개 학교', year: '전체' }
+    tab: 'one', pages: null,
+    pre: { map: null, nFiles: 0, years: [2026, 2025], groups: ['4개교', '기타 학교'], model: '', conc: 2, withAns: true, list: [], running: false, stop: false, usage: { in: 0, out: 0, n: 0 } }
   };
+  const BEHN = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
+  const okFile = p => /\.(pdf|jpe?g|png)$/i.test(p || '');
   D.drafts = D.drafts || {};
 
   // ---------- 단원·유형 목록 ----------
@@ -51,7 +54,7 @@ window.SudoRegister = function (H) {
   };
   function idOf(m) { return `${m.school}-${m.year}-${m.grade}-${m.sem}-${m.exam}`; }
   function metaOf(e) { return { school: e.s, year: e.y, grade: e.g, sem: e.t, exam: e.x }; }
-  function emptyRow(no) { return { no, pts: '', diff: 0, beh: '', essay: 0, big: '', mid: '', type: '', code: '', conf: 1, note: '', ok: 1, ans: '', sol: '' }; }
+  function emptyRow(no) { return { no, pts: '', diff: 0, beh: '', essay: 0, big: '', mid: '', type: '', code: '', conf: 1, note: '', ok: 1, ans: '', sol: '', q: '', pg: 0, box: null, ik: '' }; }
   function newDraft(meta, source, rows, extra) {
     const id = idOf(meta);
     return Object.assign({ id, isNew: !byId[id], meta: Object.assign({}, meta, { course: courseOf(meta) }), rows, level: '', cuts: {}, source, warnings: [], updatedAt: now() }, extra || {});
@@ -66,6 +69,7 @@ window.SudoRegister = function (H) {
       r.essay = it.essay ? 1 : 0;
       r.note = it.note || '';
       r.ans = it.ans || ''; r.sol = it.sol || '';
+      r.q = it.q || ''; r.pg = +it.pg || 0; r.box = Array.isArray(it.box) && it.box.length === 4 ? it.box.map(Number) : null;
       r.conf = typeof it.conf === 'number' ? it.conf : 0.5;
       const c = it.code && ci[it.code] !== undefined ? D.catalog[ci[it.code]] : null;
       if (c && c[1] === course) { r.code = c[0]; r.big = c[2]; r.mid = `${c[3]}.${c[4]}`; r.type = `${c[5]}.${c[6]}`; }
@@ -76,22 +80,43 @@ window.SudoRegister = function (H) {
     }).sort((a, b) => a.no - b.no);
   }
   function draftFromAnalysis(e) {
+    const ai = e.an.status === 'ai';
     const rows = e.an.items.map(i => {
       const r = emptyRow(i[0]);
-      Object.assign(r, { pts: i[1], diff: i[2], beh: i[3], essay: i[9], big: i[5], mid: i[6], type: i[7], code: i[8] >= 0 ? D.catalog[i[8]][0] : '', ans: i[10] || '', sol: i[11] || '' });
+      Object.assign(r, { pts: i[1] || (ai ? '' : i[1]), diff: i[2], beh: i[3], essay: i[9], big: i[5], mid: i[6], type: i[7], code: i[8] >= 0 ? D.catalog[i[8]][0] : '', ans: i[10] || '', sol: i[11] || '',
+        q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null });
+      if (ai) r.ok = r.conf >= 0.7 && r.pts !== '' ? 1 : 0;
       return r;
     });
-    return newDraft(metaOf(e), { kind: 'edit', at: now() }, rows, { level: e.an.level || '', cuts: Object.assign({}, e.an.cuts || {}) });
+    const src = ai ? Object.assign({}, e.an.source || {}, { kind: 'ai', review: true }) : { kind: 'edit', at: now() };
+    return newDraft(metaOf(e), src, rows, { level: e.an.level || '', cuts: Object.assign({}, e.an.cuts || {}), warnings: ai ? ((e.an.source || {}).warnings || []) : [] });
+  }
+  // 저장된 분석(배열) → 저장 모양
+  function docFromAn(an) {
+    return { level: an.level || null, cuts: an.cuts || {}, essay: an.essay || 0, source: an.source || null, status: an.status || 'checked',
+      items: an.items.map(i => ({ no: i[0], pts: i[1], diff: DIFF[i[2]] || '', beh: BEH[i[3]] || '', course: i[4], big: i[5], mid: i[6], type: i[7],
+        code: i[8] >= 0 ? D.catalog[i[8]][0] : '', essay: !!i[9], ans: i[10] || '', sol: i[11] || '', q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null })) };
+  }
+  // 문항 영역 잘라 그림 만들기 → {key: dataURL}
+  function cropRows(rows, pages, id) {
+    const imgs = {};
+    rows.forEach(r => {
+      const pg = pages[(r.pg || 0) - 1]; if (!pg || !r.box) return;
+      const d = window.SudoPages.crop(pg, r.box); if (!d) return;
+      r.ik = `e_${id}_${r.no}`; imgs[r.ik] = d;
+    });
+    return imgs;
   }
 
   // ---------- 화면: 고르기 ----------
   function render() {
     if (!R.draft) { const l = local.get(); if (l) { R.draft = l; toast('고치던 문항표를 이어서 엽니다'); } }
     if (R.draft) return renderReview();
+    if (R.tab === 'pre' && H.mode() !== 'phone') return renderPre();
     const ready = !!R.ai.url;
     const drafts = Object.values(D.drafts).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     $('#main').innerHTML = `
-      <div class="head"><div><div class="kicker">새 시험을 넣고 문항표를 채웁니다</div><h1>시험 등록</h1></div></div>
+      <div class="head"><div><div class="kicker">새 시험을 넣고 문항표를 채웁니다</div><h1>시험 등록</h1></div>${tabsHtml()}</div>
       <ol class="steps"><li class="on">시험 고르기</li><li class="${R.files.length ? 'on' : ''}">시험지 파일</li><li>AI 읽기 · 직접 입력</li><li>검수 후 저장</li></ol>
       <div class="reg">
         <div class="regmain">
@@ -120,14 +145,16 @@ window.SudoRegister = function (H) {
         <aside class="regside">
           ${drafts.length ? `<section class="card"><h2>검수 대기 <small>${drafts.length}건</small></h2><div class="dlist">${drafts.map(d => `<button type="button" class="drow" data-draft="${esc(d.id)}"><b>${esc(d.meta.school)} ${d.meta.year} ${d.meta.grade}-${d.meta.sem} ${esc(d.meta.exam)}</b><span>${d.rows.length}문항 · 확인 ${d.rows.filter(r => !r.ok).length}개${d.source && d.source.kind === 'ai' ? ' · AI' : ''}</span></button>`).join('')}</div></section>` : ''}
           ${aiCard()}
-          ${H.mode() === 'pc' ? batchCard() : ''}
         </aside>
       </div>`;
     bindPick();
   }
-  function modelLabel() {
-    const m = (window.SudoAI.MODELS[R.ai.provider] || []).find(x => x[0] === R.ai.model);
-    return m ? m[1].replace(/ \(.*\)$/, '') : R.ai.model;
+  function modelLabel(id) {
+    const m = (window.SudoAI.MODELS[R.ai.provider] || []).find(x => x[0] === (id || R.ai.model));
+    return m ? m[1].replace(/ \(.*\)$/, '') : (id || R.ai.model);
+  }
+  function tabsHtml() {
+    return `<div class="segx" role="tablist" aria-label="등록 방법"><button type="button" role="tab" data-tab="one" aria-selected="${R.tab === 'one'}">한 건씩 등록</button><button type="button" role="tab" data-tab="pre" aria-selected="${R.tab === 'pre'}">미리 분석 (한꺼번에)</button></div>`;
   }
   function pickArchive() {
     const ex = D.exams.filter(e => e.s === R.school && (!R.onlyRaw || !e.an)).sort((a, b) => b.y - a.y || a.g - b.g || a.t - b.t || (a.x === '기말') - (b.x === '기말'));
@@ -196,8 +223,9 @@ window.SudoRegister = function (H) {
     const wa = $('#withAns'); if (wa) wa.onchange = () => { R.withAns = wa.checked; try { localStorage.setItem('sudo.withAns', wa.checked ? '1' : '0'); } catch (_) {} };
     const ca = $('#cancelAI'); if (ca) ca.onclick = () => { if (R.busy && R.busy.ctrl) R.busy.ctrl.abort(); };
     $$('[data-draft]').forEach(b => b.onclick = () => openDraft(JSON.parse(JSON.stringify(D.drafts[b.dataset.draft]))));
-    bindAI(); bindBatch();
+    bindAI(); bindTabs();
   }
+  function bindTabs() { $$('[data-tab]').forEach(b => b.onclick = () => { R.tab = b.dataset.tab; render(); }); }
   function addFiles(list) {
     const bad = list.filter(f => !/\.(pdf|jpe?g|png)$/i.test(f.name));
     if (bad.length) toast(`${bad[0].name}: PDF·JPG·PNG만 넣을 수 있습니다`);
@@ -243,13 +271,18 @@ window.SudoRegister = function (H) {
     const tick = setInterval(() => { const el = $('#busyT'); if (el) el.textContent = `${Math.round((Date.now() - t0) / 1000)}초 · 창을 닫지 말아 주세요`; }, 1000);
     try {
       const course = courseOf(m);
-      const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, files: R.files, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), signal: ctrl.signal, withAns: R.withAns });
+      R.busy.label = '시험지를 그림으로 바꾸는 중'; render();
+      const pages = await window.SudoPages.load(R.files);
+      R.busy.label = `${modelLabel()}가 시험지 ${pages.length}쪽을 읽고 있습니다`; render();
+      const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, pages, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), signal: ctrl.signal, withAns: R.withAns });
       const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), withAns: R.withAns }, rowsFromAI(result, course));
       d.warnings = result.warnings || [];
       if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
-      R.files = [];
+      const imgs = cropRows(d.rows, pages, d.id);
+      R.files = []; R.pages = pages;
+      try { if (ctx) await ctx.saveImgs(imgs); } catch (_) { d.warnings.push('문항 그림 일부를 저장하지 못했습니다. 저장할 때 다시 시도합니다'); d.pendingImgs = 1; }
       try { await saveDraftRemote(d); } catch (_) {}
-      openDraft(d);
+      openDraft(d, true);
     } catch (e) {
       toast(e.name === 'AbortError' ? '그만두었습니다' : '읽지 못했습니다: ' + e.message);
       R.busy = null; render();
@@ -260,8 +293,8 @@ window.SudoRegister = function (H) {
     D.drafts[d.id] = JSON.parse(JSON.stringify(d));
     if (ctx) await ctx.saveDraft(d.id, D.drafts[d.id]);
   }
-  function openDraft(d) { R.draft = d; local.set(d); H.go('register'); render(); window.scrollTo(0, 0); }
-  function closeDraft() { R.draft = null; local.set(null); render(); }
+  function openDraft(d, keepPages) { if (!keepPages) R.pages = null; R.draft = d; local.set(d); H.go('register'); render(); window.scrollTo(0, 0); }
+  function closeDraft() { R.draft = null; R.pages = null; local.set(null); render(); }
 
   // ---------- 화면: 검수 ----------
   function sumOf(rows) { return Math.round(rows.reduce((s, r) => s + (+r.pts || 0), 0) * 100) / 100; }
@@ -292,9 +325,9 @@ window.SudoRegister = function (H) {
       ${d.warnings && d.warnings.length ? `<div class="callout">${d.warnings.map(w => esc(w)).join('<br>')}</div>` : ''}
       <details class="card cuts"><summary>등급컷 넣기 <small>선택 · 학교 알리미 등에서 확인한 값</small></summary><div class="cutrow">${['1등급', '2등급', '3등급', '4등급', '5등급'].map(k => `<label class="sel"><span>${k}</span><input data-cut="${k}" value="${esc((d.cuts || {})[k] || '')}" placeholder="예: 89점"></label>`).join('')}</div></details>
       <div class="tablewrap rvwrap"><table class="rvtbl">
-        <thead><tr><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
+        <thead><tr><th>그림</th><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
         <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id, showAns)).join('')}</tbody></table></div>
-      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
+      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${R.pages ? '' : `<label class="btn ghost sm" for="rvPages">시험지 파일 다시 열기 <small>문항 영역 고칠 때</small></label><input type="file" id="rvPages" accept="${ACCEPT}" multiple hidden>`}${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
     bindReview();
   }
   function rowHtml(r, i, course, mids, selfId, showAns) {
@@ -304,13 +337,14 @@ window.SudoRegister = function (H) {
     const midOpts = mids.map(x => `<option value="${esc(x.mid)}" ${x.mid === r.mid ? 'selected' : ''}>${esc(x.mid)}${x.isNew ? ' (새)' : ''}</option>`).join('');
     const typeSel = `<select data-k="code" aria-label="${r.no}번 유형"><option value="">${r.mid ? '고르기' : '중단원 먼저'}</option>${types.map(([c]) => `<option value="${esc(c[0])}" ${c[0] === r.code ? 'selected' : ''}>${esc(c[5])}.${esc(c[6] || '(이름 없음)')}</option>`).join('')}<option value="__new" ${!known && (r.type || r.mid) && !r.code ? 'selected' : ''}>＋ 새 유형</option></select>`;
     const newIn = !known && !r.code && (r.type || r.mid) ? `<input data-k="type" value="${esc(String(r.type).replace(/^\d+\.\s*/, ''))}" placeholder="새 유형 이름">` : '';
-    return `<tr data-i="${i}" class="${r.ok ? '' : 'need'}">
+ const thumb = `<td class="thc">${r.ik ? `<button type="button" class="thumb" data-zoom title="크게 보기"><img data-ik="${esc(r.ik)}" alt="${r.no}번 문항 그림"></button>` : '<span class="dl">없음</span>'}${R.pages ? `<button type="button" class="linkbtn" data-rebox>영역 ${r.ik ? '고치기' : '잡기'}</button>` : ''}</td>`;
+    return `<tr data-i="${i}" class="${r.ok ? '' : 'need'}">${thumb}
       <td><input data-k="no" type="number" min="1" value="${r.no}" class="w3"></td>
       <td><input data-k="pts" type="number" step="0.1" min="0" value="${r.pts}" class="w4 ${r.pts === '' ? 'miss' : ''}"></td>
       <td><div class="dseg">${[1, 2, 3, 4].map(k => `<button type="button" data-diff="${k}" class="d${k}" aria-pressed="${r.diff === k}" title="${DIFF[k]}">${DIFF[k]}</button>`).join('')}</div></td>
       <td><select data-k="beh" aria-label="${r.no}번 행동영역"><option value=""></option>${BEHK.map(k => `<option value="${k}" ${r.beh === k ? 'selected' : ''}>${BEH[k]}</option>`).join('')}</select></td>
       <td><select data-k="mid" aria-label="${r.no}번 중단원"><option value="">고르기</option>${midOpts}<option value="__new">＋ 새 중단원</option></select></td>
-      <td><div class="tcell">${typeSel}${newIn}${past.length ? `<small class="past" title="${esc(past.map(p => `${p.s} ${p.e.y} ${p.e.g}-${p.e.t} ${p.e.x} ${p.no}번`).join('\n'))}">지난 출제 ${past.length}번 · ${esc(past.slice(0, 2).map(p => `${H.short(p.s)} ${p.e.g}-${p.e.t}${p.e.x[0]} ${p.no}번`).join(', '))}${past.length > 2 ? ' 외' : ''}</small>` : ''}${r.note ? `<small class="note">AI: ${esc(r.note)}</small>` : ''}</div></td>
+      <td><div class="tcell">${typeSel}${newIn}${past.length ? `<small class="past" title="${esc(past.map(p => `${p.s} ${p.e.y} ${p.e.g}-${p.e.t} ${p.e.x} ${p.no}번`).join('\n'))}">지난 출제 ${past.length}번 · ${esc(past.slice(0, 2).map(p => `${H.short(p.s)} ${p.e.g}-${p.e.t}${p.e.x[0]} ${p.no}번`).join(', '))}${past.length > 2 ? ' 외' : ''}</small>` : ''}${r.note ? `<small class="note">AI: ${esc(r.note)}</small>` : ''}${r.q ? `<small class="qtx" title="${esc(r.q)}">${esc(r.q)}</small>` : ''}</div></td>
       <td><input data-k="essay" type="checkbox" ${r.essay ? 'checked' : ''} aria-label="${r.no}번 서답형"></td>
       ${showAns ? `<td><input data-k="ans" value="${esc(r.ans || '')}" class="w5" aria-label="${r.no}번 정답" title="${esc(r.sol || '')}">${r.sol ? `<small class="sol">${esc(r.sol)}</small>` : ''}</td>` : ''}
       <td><button type="button" class="okbtn" data-ok aria-pressed="${!!r.ok}" title="확인">${r.ok ? '✓' : '확인'}</button></td>
@@ -329,6 +363,11 @@ window.SudoRegister = function (H) {
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('정답표를 복사했습니다'), () => toast('복사하지 못했습니다'));
     };
     const ro = $('#rvAnsOn'); if (ro) ro.onclick = () => { d.showAns = true; touch(true); };
+    const rp = $('#rvPages'); if (rp) rp.onchange = async () => {
+      try { toast('시험지를 여는 중…'); R.pages = await window.SudoPages.load([...rp.files]); toast(`${R.pages.length}쪽을 열었습니다. ‘영역 고치기’를 누르세요`); renderReview(); }
+      catch (e) { toast(e.message); }
+    };
+    loadThumbs();
     $('#rvAdd').onclick = () => { d.rows.push(emptyRow((d.rows.reduce((m, r) => Math.max(m, +r.no || 0), 0)) + 1)); touch(true); };
     $$('.rvtbl tbody tr').forEach(tr => {
       const r = d.rows[+tr.dataset.i];
@@ -362,7 +401,21 @@ window.SudoRegister = function (H) {
       });
       $('[data-ok]', tr).onclick = ev => { r.ok = r.ok ? 0 : 1; tr.classList.toggle('need', !r.ok); ev.currentTarget.setAttribute('aria-pressed', String(!!r.ok)); ev.currentTarget.textContent = r.ok ? '✓' : '확인'; touch(); refreshSum(); };
       $('[data-del]', tr).onclick = () => { d.rows.splice(+tr.dataset.i, 1); touch(true); };
+      const zb = $('[data-zoom]', tr); if (zb) zb.onclick = () => window.SudoPages.zoom($('img', zb).src, `${r.no}번 문항`);
+      const rb = $('[data-rebox]', tr); if (rb) rb.onclick = async () => {
+        const res = await window.SudoPages.pickBox(R.pages, r.pg || 1, r.box); if (!res) return;
+        r.pg = res.pg; r.box = res.box;
+        const img = window.SudoPages.crop(R.pages[res.pg - 1], res.box); if (!img) { toast('영역이 너무 작습니다'); return; }
+        r.ik = `e_${d.id}_${r.no}`;
+        try { if (ctx) await ctx.saveImgs({ [r.ik]: img }); else (H.imgCache || {})[r.ik] = img; mark(); touch(true); toast('문항 그림을 바꿨습니다'); }
+        catch (e) { toast('그림을 저장하지 못했습니다: ' + e.message); }
+      };
     });
+  }
+  function loadThumbs() {
+    const imgs = $$('img[data-ik]'); if (!imgs.length) return;
+    const fill = map => imgs.forEach(im => { const v = map[im.dataset.ik]; if (v) im.src = v; else im.closest('td').innerHTML = '<span class="dl">없음</span>'; });
+    if (ctx && ctx.getImgs) ctx.getImgs(imgs.map(i => i.dataset.ik)).then(fill, () => {}); else fill(H.imgCache || {});
   }
   // 표를 다시 그리지 않고 위쪽 숫자만 고침 (입력 중 커서 유지)
   function refreshSum() {
@@ -393,7 +446,29 @@ window.SudoRegister = function (H) {
     if (!d.level) soft.push('시험 난이도를 고르지 않았습니다');
     if (soft.length && !confirm(soft.join('\n') + '\n\n그래도 저장할까요?')) return;
 
-    // 새 유형 만들기
+    const newTypes = makeTypes(rows, course, m, d.id);
+    const analysis = {
+      level: d.level || null, cuts: d.cuts || {}, essay: rows.filter(r => r.essay).length, status: 'checked',
+      items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay, ans: r.ans || '', sol: r.sol || '',
+        q: r.q || '', ik: r.ik || '', pg: r.pg || 0, box: r.box || null })),
+      source: Object.assign({}, d.source || {}, { checkedAt: now() }), savedAt: now()
+    };
+    delete analysis.source.review;
+    const isNew = !byId[d.id];
+    const exam = isNew ? { school: m.school, main: MAIN4.includes(m.school), year: +m.year, grade: +m.grade, sem: +m.sem, exam: m.exam,
+      hasPaper: true, hasAnswer: false, hasPoints: false, hasRubric: false, formats: ['pdf'], files: [], primary: '', notes: ['시험 등록에서 추가 (원본은 MYBOX에 넣어 주세요)'] } : null;
+    btn.disabled = true; btn.textContent = '저장하는 중…';
+    try {
+      if (ctx) await ctx.saveAnalysis({ id: d.id, exam, analysis, newTypes });
+      delete D.drafts[d.id];
+      H.applySaved({ id: d.id, exam, analysis, newTypes });
+      R.draft = null; R.pages = null; local.set(null); R.examId = null;
+      toast('저장했습니다. 보관함과 분석지에 바로 나옵니다');
+      H.openExam(d.id);
+    } catch (e) { toast('저장하지 못했습니다: ' + e.message); btn.disabled = false; btn.textContent = '검수 끝 · 저장'; }
+  }
+  // 목록에 없는 유형은 새 코드로 만들어 행에 붙인다 (검수할 때만)
+  function makeTypes(rows, course, m, fromId) {
     const newTypes = [], ci = catIdx();
     const roman = big => (String(big).split('.')[0] || '').trim() || '?';
     for (const r of rows) {
@@ -412,63 +487,92 @@ window.SudoRegister = function (H) {
       const typeNo = pad2(1 + Math.max(0, ...all.filter(t => t.course === course && t.midNo === midNo).map(t => +t.typeNo || 0)));
       let code = `${m.grade}-${m.sem}·${roman(r.big)}·${midNo}·${typeNo}`;
       while (all.some(t => t.code === code)) code += '+';
-      const t = { code, course, big: r.big || '', midNo, mid: midName, typeNo, name, addedAt: now(), from: d.id };
+      const t = { code, course, big: r.big || '', midNo, mid: midName, typeNo, name, addedAt: now(), from: fromId };
       newTypes.push(t);
       Object.assign(r, { code, mid: `${midNo}.${midName}`, type: `${typeNo}.${name}` });
     }
-    const analysis = {
-      level: d.level || null, cuts: d.cuts || {}, essay: rows.filter(r => r.essay).length,
-      items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay, ans: r.ans || '', sol: r.sol || '' })),
-      source: Object.assign({}, d.source || {}, { checkedAt: now() }), savedAt: now()
-    };
-    const isNew = !byId[d.id];
-    const exam = isNew ? { school: m.school, main: MAIN4.includes(m.school), year: +m.year, grade: +m.grade, sem: +m.sem, exam: m.exam,
-      hasPaper: true, hasAnswer: false, hasPoints: false, hasRubric: false, formats: ['pdf'], files: [], primary: '', notes: ['시험 등록에서 추가 (원본은 MYBOX에 넣어 주세요)'] } : null;
-    btn.disabled = true; btn.textContent = '저장하는 중…';
-    try {
-      if (ctx) await ctx.saveAnalysis({ id: d.id, exam, analysis, newTypes });
-      delete D.drafts[d.id];
-      H.applySaved({ id: d.id, exam, analysis, newTypes });
-      R.draft = null; local.set(null); R.examId = null;
-      toast('저장했습니다. 보관함과 분석지에 바로 나옵니다');
-      H.openExam(d.id);
-    } catch (e) { toast('저장하지 못했습니다: ' + e.message); btn.disabled = false; btn.textContent = '검수 끝 · 저장'; }
+    return newTypes;
   }
 
-  // ---------- MYBOX 폴더 일괄 분석 (PC) ----------
-  function batchCard() {
-    const B = R.batch;
-    const cand = B.map ? candidates() : [];
-    return `<section class="card"><h2>MYBOX 폴더 한꺼번에</h2>
-      ${!B.map ? `<p class="dl">‘B. 학교별 기출문제’ 폴더를 통째로 고르면, 분석 전 시험의 PDF를 차례로 AI가 읽어 <b>검수 대기</b>에 넣습니다. 파일은 이 컴퓨터에서 바로 읽고, 폴더에는 아무것도 쓰지 않습니다.</p>
-        <label class="btn ghost" for="batchDir">폴더 고르기</label><input type="file" id="batchDir" webkitdirectory multiple hidden>`
-      : `<div class="pickrow"><label class="sel"><span>학교</span><select id="bSchool">${['4개 학교', '전체', ...H.schools].map(s => `<option ${s === B.school ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
-          <label class="sel"><span>연도</span><select id="bYear">${['전체', ...H.years].map(y => `<option ${String(y) === String(B.year) ? 'selected' : ''}>${y}</option>`).join('')}</select></label></div>
-        <p class="dl">읽을 수 있는 시험 <b>${cand.length}건</b>${R.ai.url ? '' : ' · 먼저 AI 연결을 마쳐 주세요'}. 한 번에 2건씩 읽습니다.</p>
-        ${B.running ? '<button type="button" class="btn ghost" id="bStop">멈추기</button>' : `<button type="button" class="btn" id="bStart" ${cand.length && R.ai.url ? '' : 'disabled'}>${cand.length}건 읽기 시작</button>`}`}
-      ${B.list.length ? `<div class="blist">${B.list.map(j => `<div class="bjob ${j.st}"><span>${esc(H.short(j.e.s))} ${j.e.y} ${j.e.g}-${j.e.t} ${esc(j.e.x)}</span><b>${esc(j.msg)}</b></div>`).join('')}</div>` : ''}
-    </section>`;
-  }
+  // ---------- 미리 분석: MYBOX 폴더의 시험을 한꺼번에 AI로 읽어 '검수 전'으로 바로 저장 ----------
+  const P = R.pre;
+  const isMain = e => MAIN4.includes(e.s);
+  const readable = e => okFile(e.pr) || e.fl.some(f => (f[1] === 'P' || f[1] === 'PA') && okFile(f[0]));
   function filesFor(e) {
-    const M = R.batch.map;
+    const M = P.map; if (!M) return null;
     const take = p => M.get(p);
-    const ok = p => /\.(pdf|jpe?g|png)$/i.test(p);
-    const main = ok(e.pr) && take(e.pr) ? e.pr : (e.fl.find(f => (f[1] === 'P' || f[1] === 'PA') && ok(f[0]) && take(f[0])) || [])[0];
+    const main = okFile(e.pr) && take(e.pr) ? e.pr : (e.fl.find(f => (f[1] === 'P' || f[1] === 'PA') && okFile(f[0]) && take(f[0])) || [])[0];
     if (!main) return null;
-    const extra = e.fl.filter(f => f[1] === 'S' && /\.pdf$/i.test(f[0]) && take(f[0]) && f[0] !== main).map(f => f[0]);
+    const extra = e.fl.filter(f => (f[1] === 'S' || f[1] === 'A') && /\.pdf$/i.test(f[0]) && take(f[0]) && f[0] !== main).map(f => f[0]).slice(0, 2);
     return [main, ...extra].map(take);
   }
-  function candidates() {
-    const B = R.batch;
-    return D.exams.filter(e => !e.an && !D.drafts[e.id]
-      && (B.school === '전체' || (B.school === '4개 학교' ? MAIN4.includes(e.s) : e.s === B.school))
-      && (B.year === '전체' || String(e.y) === String(B.year)) && filesFor(e))
-      .sort((a, b) => b.y - a.y || a.s.localeCompare(b.s, 'ko') || a.g - b.g || a.t - b.t);
+  const inGroup = e => (P.groups.includes('4개교') && isMain(e)) || (P.groups.includes('기타 학교') && !isMain(e));
+  function preCands(year) {
+    return D.exams.filter(e => !e.an && !D.drafts[e.id] && (year ? e.y === year : P.years.includes(e.y)) && inGroup(e) && readable(e) && (!P.map || filesFor(e)))
+      .sort((a, b) => b.y - a.y || (isMain(b) - isMain(a)) || a.s.localeCompare(b.s, 'ko') || a.g - b.g || a.t - b.t || (a.x === '기말') - (b.x === '기말'));
   }
-  function bindBatch() {
-    const B = R.batch;
-    const dir = $('#batchDir');
-    if (dir) dir.onchange = () => {
+  const preExcluded = () => D.exams.filter(e => !e.an && P.years.includes(e.y) && inGroup(e) && e.p && !readable(e));
+  const fillCands = () => D.exams.filter(e => e.an && e.an.status !== 'ai' && !e.an.items.some(i => i[13]) && readable(e) && (!P.map || filesFor(e)));
+  const fmtDur = s => s >= 3600 ? `${Math.floor(s / 3600)}시간 ${Math.round(s % 3600 / 60)}분` : `${Math.max(1, Math.round(s / 60))}분`;
+  const PHASES = [['1차', [2026, 2025], '지금 분석지에 바로 쓰이는 시험'], ['2차', [2024, 2023, 2022], '연도별로 나눠 하루 한 해씩 권장']];
+
+  function renderPre() {
+    const cands = preCands(), ex = preExcluded();
+    const allYears = [...new Set(D.exams.map(e => e.y))].sort((a, b) => b - a).slice(0, 6);
+    const nAI = D.exams.filter(e => e.an && e.an.status === 'ai').length, nChk = D.exams.filter(e => e.an && e.an.status !== 'ai').length;
+    const model = P.model || R.ai.model;
+    const st = { done: 0, run: 0, fail: 0, wait: 0 }; P.list.forEach(j => { st[j.st] = (st[j.st] || 0) + 1; });
+    const avgSecs = (() => { const d = P.list.filter(j => j.secs); return d.length ? d.reduce((s, j) => s + j.secs, 0) / d.length : 100; })();
+    const fc = fillCands();
+    const chip = (attr, v, label, on) => `<button type="button" class="chip" ${attr}="${esc(v)}" aria-pressed="${on}">${esc(label)}</button>`;
+    $('#main').innerHTML = `
+      <div class="head"><div><div class="kicker">분석지를 만들기 전에 AI가 미리 문항표를 채워 둡니다</div><h1>미리 분석</h1></div>${tabsHtml()}</div>
+      <div class="tiles">
+        <div class="tile dark"><span>미리 분석할 시험</span><b>${cands.length}건</b><span>${P.years.slice().sort().join('·')}년 · 읽을 수 있는 파일 있음</span></div>
+        <div class="tile"><span>4개교</span><b>${cands.filter(isMain).length}건</b><span>목운 · 신목 · 양정 · 월촌</span></div>
+        <div class="tile"><span>기타 학교</span><b>${cands.filter(e => !isMain(e)).length}건</b><span>인근 학교 비교용</span></div>
+        <div class="tile"><span>이미 분석됨</span><b>${nChk + nAI}건</b><span>검수 완료 ${nChk} · 검수 전 ${nAI}</span></div></div>
+      <div class="pregrid">
+        <section class="card"><h2>무엇을 미리 분석할까요</h2>
+          ${P.map ? `<div class="folderok"><b>MYBOX ‘B. 학교별 기출문제’ 연결됨</b><span>파일 ${P.nFiles}개를 찾았습니다 · 폴더에는 아무것도 쓰지 않습니다</span><label class="btn ghost sm" for="preDir">다시 고르기</label></div>`
+            : `<div class="folderok off"><b>먼저 MYBOX 폴더를 골라 주세요</b><span>N:\\공유\\공유받은\\2026 중등부\\A. 내신대비\\<b>B. 학교별 기출문제</b> 폴더를 통째로 고릅니다. 이 컴퓨터에서 바로 읽고, 폴더에는 아무것도 쓰지 않습니다.</span><label class="btn sm" for="preDir">폴더 고르기</label></div>`}
+          <input type="file" id="preDir" webkitdirectory multiple hidden>
+          <div class="fgroup"><span class="lab">연도</span><div class="chips">${allYears.map(y => chip('data-py', y, `${y} · ${preCands(y).length}건`, P.years.includes(y))).join('')}</div><small class="dl">숫자는 PDF·사진이 있어 바로 읽을 수 있는 분석 전 시험 수입니다.</small></div>
+          <div class="fgroup"><span class="lab">학교</span><div class="chips">${['4개교', '기타 학교'].map(g => chip('data-pg', g, g, P.groups.includes(g))).join('')}</div></div>
+          <div class="row2">
+            <label class="sel"><span>AI 모델</span><select id="preModel">${(window.SudoAI.MODELS[R.ai.provider] || []).map(m => `<option value="${m[0]}" ${m[0] === model ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></label>
+            <label class="sel"><span>한 번에</span><select id="preConc">${[1, 2, 3].map(n => `<option value="${n}" ${n === P.conc ? 'selected' : ''}>${n}건씩</option>`).join('')}</select></label></div>
+          <label class="chk"><input type="checkbox" id="preAns" ${P.withAns ? 'checked' : ''}> 정답도 AI가 풀기 <small>답지 없는 시험만</small></label>
+          <div class="presum"><b>선택한 시험 ${cands.length}건 · 예상 ${fmtDur(cands.length * avgSecs / P.conc)} 안팎</b>
+            <span>결과는 <b class="goldt">‘검수 전’</b> 표시를 달고 보관함과 분석지에 바로 올라갑니다. 검수는 나중에 하셔도 됩니다.</span></div>
+          ${P.running ? '<button type="button" class="btn ghost big" id="preStop">멈추기 <small>지금 읽는 것까지만</small></button>' : `<div class="row2 btnrow">
+            <button type="button" class="btn ghost big" id="preTry" ${cands.length && R.ai.url && P.map ? '' : 'disabled'}>먼저 3건 시험해 보기</button>
+            <button type="button" class="btn big" id="preAll" ${cands.length && R.ai.url && P.map ? '' : 'disabled'}>${cands.length}건 모두 시작</button></div>`}
+          ${!R.ai.url ? '<p class="callout">‘한 건씩 등록’ 화면의 AI 연결을 먼저 마쳐 주세요.</p>' : ''}
+          <div class="phases"><b>나눠서 진행하기 (권장 순서)</b>${PHASES.map(([k, ys, sub]) => {
+            const tot = D.exams.filter(e => ys.includes(e.y) && readable(e)), done = tot.filter(e => e.an).length;
+            const on = ys.every(y => P.years.includes(y)) && P.years.length === ys.length;
+            return `<button type="button" class="phase ${on ? 'on' : ''}" data-phase="${ys.join(',')}"><span class="ptag">${k}</span><span class="pt"><b>${ys[ys.length - 1]}~${ys[0]}년 · ${tot.length}건</b><small>${sub}</small></span><span class="pst">${done >= tot.length ? '끝' : `${done}/${tot.length}`}</span></button>`;
+          }).join('')}</div>
+          ${ex.length ? `<details class="exd"><summary>제외된 시험 ${ex.length}건 — 한글 파일만 있음</summary><div class="exl">${ex.map(e => `<div><span>${esc(e.s)} ${e.y} ${e.g}-${e.t} ${esc(e.x)}</span><span class="goldt">PDF로 저장 필요</span></div>`).join('')}</div></details>` : ''}
+          ${nChk ? `<div class="fillbox"><b>검수 끝난 시험에 문항 그림 채우기</b><span>예전에 검수한 시험 중 문항 그림·핵심 내용이 없는 ${fc.length}건${P.map ? '' : ' (폴더를 고르면 셉니다)'}. 유사문항에 그림을 넣으려면 필요합니다. 문항표(배점·난이도·유형)는 바꾸지 않습니다.</span>
+            <button type="button" class="btn ghost sm" id="preFill" ${fc.length && R.ai.url && P.map && !P.running ? '' : 'disabled'}>${fc.length}건 그림 채우기</button></div>` : ''}
+        </section>
+        <section class="card" aria-label="진행 상황"><div class="head"><h2>진행 상황 <small>${P.list.length ? `${st.done} / ${P.list.length}건${P.running && st.wait + st.run ? ` · 남은 시간 약 ${fmtDur((st.wait + st.run) * avgSecs / P.conc)}` : ''}` : '아직 시작 전'}</small></h2>
+            ${!P.running && st.fail ? '<button type="button" class="btn ghost sm" id="preRetry">실패한 것 다시</button>' : ''}</div>
+          ${P.list.length ? `<div class="pbar" role="progressbar" aria-valuenow="${st.done}" aria-valuemin="0" aria-valuemax="${P.list.length}" aria-label="진행률"><i style="width:${st.done / P.list.length * 100}%"></i><i class="run" style="width:${st.run / P.list.length * 100}%"></i></div>
+          <div class="pcnt"><span><b>${st.done}</b> 완료(검수 전)</span><span><b>${st.run}</b> 읽는 중</span><span><b class="goldt">${st.fail}</b> 다시 필요</span><span><b>${st.wait}</b> 대기</span></div>
+          <p class="dl tip">이 창을 닫으면 지금 읽는 것까지만 끝나고 멈춥니다. 다시 열어 폴더를 고르고 시작하면 남은 시험부터 이어서 합니다.</p>
+          ${P.usage.n ? `<p class="dl">사용량: ${P.usage.n}건 · 입력 ${Math.round(P.usage.in / 1000)}천 · 출력 ${Math.round(P.usage.out / 1000)}천 토큰 (한 건 평균 입력 ${Math.round(P.usage.in / P.usage.n / 1000)}천 · 출력 ${Math.round(P.usage.out / P.usage.n / 1000)}천). 정확한 금액은 Claude 콘솔 Usage에서 확인하세요.</p>` : ''}
+          <div class="jlist">${P.list.map(j => `<div class="job" data-jid="${esc(j.e.id)}"><span><b>${esc(j.e.s)}</b> ${j.e.y} · ${j.e.g}학년 ${j.e.t}학기 ${esc(j.e.x)}${j.kind === 'fill' ? ' <small>그림 채우기</small>' : ''}</span><span class="dl">${esc(j.msg || '')}</span><span class="jst ${j.st}">${{ done: j.kind === 'fill' ? '그림 완료' : '검수 전', run: '읽는 중', fail: '다시 필요', wait: '대기' }[j.st]}</span></div>`).join('')}</div>`
+          : '<div class="empty">왼쪽에서 연도·학교를 고르고 ‘먼저 3건 시험해 보기’를 누르면 여기에 진행 상황이 나옵니다. 3건을 먼저 돌려 시간·사용량을 보고 모델을 정하세요.</div>'}
+        </section></div>`;
+    bindPre();
+  }
+  function bindPre() {
+    bindTabs();
+    const dir = $('#preDir');
+    dir.onchange = () => {
       const keys = new Set(D.exams.flatMap(e => e.fl.map(f => f[0])));
       const map = new Map();
       [...dir.files].forEach(f => {
@@ -476,47 +580,86 @@ window.SudoRegister = function (H) {
         for (let k = 0; k < segs.length; k++) { const p = segs.slice(k).join('/'); if (keys.has(p)) { map.set(p, f); break; } }
       });
       if (!map.size) { toast('보관함 시험과 맞는 파일을 찾지 못했습니다. ‘B. 학교별 기출문제’ 폴더를 골라 주세요'); return; }
-      B.map = map; toast(`파일 ${map.size}개를 찾았습니다`); render();
+      P.map = map; P.nFiles = map.size; toast(`파일 ${map.size}개를 찾았습니다`); render();
     };
-    const bs = $('#bSchool'); if (bs) bs.onchange = () => { B.school = bs.value; render(); };
-    const by = $('#bYear'); if (by) by.onchange = () => { B.year = by.value; render(); };
-    const st = $('#bStart'); if (st) st.onclick = startBatch;
-    const sp = $('#bStop'); if (sp) sp.onclick = () => { B.stop = true; sp.disabled = true; sp.textContent = '지금 읽는 것까지만 하고 멈춥니다'; };
+    $$('[data-py]').forEach(b => b.onclick = () => { const y = +b.dataset.py; P.years = P.years.includes(y) ? P.years.filter(x => x !== y) : P.years.concat(y); render(); });
+    $$('[data-pg]').forEach(b => b.onclick = () => { const g = b.dataset.pg; P.groups = P.groups.includes(g) ? P.groups.filter(x => x !== g) : P.groups.concat(g); render(); });
+    $$('[data-phase]').forEach(b => b.onclick = () => { P.years = b.dataset.phase.split(',').map(Number); render(); });
+    $('#preModel').onchange = ev => { P.model = ev.target.value; };
+    $('#preConc').onchange = ev => { P.conc = +ev.target.value; render(); };
+    $('#preAns').onchange = ev => { P.withAns = ev.target.checked; };
+    const go = (list, kind) => { if (!P.running) runPre(list.map(e => ({ e, st: 'wait', msg: '', kind }))); };
+    const t = $('#preTry'); if (t) t.onclick = () => go(preCands().slice(0, 3), 'an');
+    const al = $('#preAll'); if (al) al.onclick = () => { const c = preCands(); if (confirm(`${c.length}건을 차례로 읽습니다. 예상 ${fmtDur(c.length * 100 / P.conc)} 안팎이고, 그동안 이 창을 열어 두어야 합니다. 시작할까요?`)) go(c, 'an'); };
+    const fl = $('#preFill'); if (fl) fl.onclick = () => go(fillCands(), 'fill');
+    const sp = $('#preStop'); if (sp) sp.onclick = () => { P.stop = true; sp.disabled = true; sp.textContent = '지금 읽는 것까지만 하고 멈춥니다'; };
+    const rt = $('#preRetry'); if (rt) rt.onclick = () => runPre(P.list.filter(j => j.st === 'fail').map(j => Object.assign(j, { st: 'wait', msg: '' })), true);
   }
-  async function startBatch() {
-    const B = R.batch;
-    const list = candidates().map(e => ({ e, st: 'wait', msg: '대기' }));
-    B.list = list; B.running = true; B.stop = false; render();
-    const paint = () => { if ((location.hash || '').startsWith('#register') && !R.draft) render(); };
+  const prePaint = () => { if ((location.hash || '').startsWith('#register') && !R.draft && R.tab === 'pre') render(); };
+  async function runPre(list, keep) {
+    if (!keep) P.list = list;
+    P.running = true; P.stop = false; render();
     let next = 0;
+    const settings = Object.assign({}, R.ai, { model: P.model || R.ai.model });
     const worker = async () => {
-      while (!B.stop && next < list.length) {
+      while (!P.stop && next < list.length) {
         const j = list[next++], t0 = Date.now();
-        j.st = 'run'; j.msg = '읽는 중'; paint();
+        j.st = 'run'; j.msg = '쪽 여는 중'; prePaint();
+        const tick = setInterval(() => { j.msg = `${Math.round((Date.now() - t0) / 1000)}초째`; const el = document.querySelector(`.job[data-jid="${CSS.escape(j.e.id)}"] .dl`); if (el) el.textContent = j.msg; }, 5000);
         try {
+          const files = filesFor(j.e); if (!files) throw new Error('파일을 찾지 못함');
+          const pages = await window.SudoPages.load(files, { maxPages: 16 });
+          j.msg = `${pages.length}쪽 읽는 중`; prePaint();
           const m = metaOf(j.e), course = courseOf(m);
-          const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, files: filesFor(j.e), meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), withAns: R.withAns });
-          const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: filesFor(j.e).map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), batch: true }, rowsFromAI(result, course));
-          d.warnings = result.warnings || [];
-          if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
-          await saveDraftRemote(d);
-          j.st = 'done'; j.msg = `${d.rows.length}문항 · 확인 ${d.rows.filter(r => !r.ok).length}`;
-        } catch (e) { j.st = 'fail'; j.msg = '실패: ' + e.message.slice(0, 40); }
-        paint();
+          const withAns = j.kind === 'an' && P.withAns && !j.e.a;
+          const { result, usage } = await window.SudoAI.analyze({ settings, getToken: ctx.getToken, pages, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), withAns });
+          P.usage.in += usage.in; P.usage.out += usage.out; P.usage.n++;
+          const rows = rowsFromAI(result, course);
+          const imgs = cropRows(rows, pages, j.e.id);
+          const secs = Math.round((Date.now() - t0) / 1000);
+          let analysis;
+          if (j.kind === 'fill') {
+            analysis = docFromAn(j.e.an);
+            const byNo = Object.fromEntries(rows.map(r => [r.no, r]));
+            let hit = 0;
+            analysis.items.forEach(it => { const r = byNo[it.no]; if (r) { hit++; Object.assign(it, { q: r.q, pg: r.pg, box: r.box, ik: r.ik }); } });
+            Object.keys(imgs).forEach(k => { if (!analysis.items.some(it => it.ik === k)) delete imgs[k]; });
+            analysis.source = Object.assign({}, analysis.source || {}, { imgFill: { model: settings.model, at: now(), usage } });
+            j.msg = `${hit}문항 그림`;
+          } else {
+            const warnings = (result.warnings || []).slice(0, 6);
+            if (result.total_pts) warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
+            analysis = {
+              level: suggestLevel(rows), cuts: {}, essay: rows.filter(r => r.essay).length, status: 'ai',
+              items: rows.map(r => ({ no: +r.no, pts: r.pts === '' ? 0 : +r.pts, diff: DIFF[r.diff] || '', beh: BEH[r.beh] || '', course, big: r.big || '', mid: r.mid || '', type: r.type || '', code: r.code || '', essay: !!r.essay,
+                ans: r.ans || '', sol: r.sol || '', q: r.q || '', ik: r.ik || '', conf: Math.round(r.conf * 100) / 100, pg: r.pg || 0, box: r.box || null })),
+              source: { kind: 'ai', provider: settings.provider, model: settings.model, at: now(), usage, secs, withAns, batch: true, files: files.map(f => f.name), warnings }, savedAt: now()
+            };
+            j.msg = `${rows.length}문항 · 확인 ${rows.filter(r => !r.ok).length}개 · ${secs}초`;
+          }
+          if (ctx) await ctx.saveAnalysis({ id: j.e.id, analysis, imgs });
+          H.applySaved({ id: j.e.id, analysis });
+          j.st = 'done'; j.secs = secs;
+        } catch (e) { j.st = 'fail'; j.msg = String(e.message || e).slice(0, 60); }
+        clearInterval(tick);
+        prePaint();
       }
     };
-    await Promise.all([worker(), worker()]);
-    B.running = false;
-    const done = list.filter(j => j.st === 'done').length;
-    toast(`${done}건을 읽어 검수 대기에 넣었습니다`);
-    if (B.stop) list.filter(j => j.st === 'wait').forEach(j => { j.msg = '멈춤'; });
-    paint();
+    await Promise.all(Array.from({ length: Math.min(P.conc, list.length) }, worker));
+    P.running = false;
+    if (P.stop) list.filter(j => j.st === 'wait').forEach(j => { j.msg = '멈춤'; });
+    const done = list.filter(j => j.st === 'done').length, fail = list.filter(j => j.st === 'fail').length;
+    toast(`${done}건 끝${fail ? ` · ${fail}건 다시 필요` : ''}. 보관함에 ‘검수 전’으로 올라갔습니다`);
+    render();
   }
 
   return {
     render,
-    pickExam(id) { const e = byId[id]; if (!e) return; R.draft = null; local.set(null); R.pick = 'archive'; R.school = e.s; R.onlyRaw = !e.an; R.examId = id; R.files = []; H.go('register'); render(); },
+    pickExam(id) { const e = byId[id]; if (!e) return; R.tab = 'one'; R.draft = null; local.set(null); R.pick = 'archive'; R.school = e.s; R.onlyRaw = !e.an; R.examId = id; R.files = []; H.go('register'); render(); },
     editExam(id) { const e = byId[id]; if (e && e.an) openDraft(draftFromAnalysis(e)); },
-    busy: () => !!(R.busy || R.batch.running)
+    busy: () => !!(R.busy || R.pre.running),
+    openPre() { R.draft = null; local.set(null); R.tab = 'pre'; H.go('register'); render(); },
+    // 자료실·학생 화면이 같이 쓰는 도우미
+    catalogLines, midsOf, typesOf, catIdx, courseOf, aiSettings: () => R.ai, modelLabel
   };
 };

@@ -10,8 +10,9 @@ service cloud.firestore {
       allow read, write: if allowed();
     }
     // 학부모님께 보내는 분석지 링크: 링크(긴 무작위 주소)를 아는 사람만 한 건씩 열람. 목록 보기는 막음.
+    // 학생 분석지 링크는 exp(만료 시각)가 지나면 열리지 않음.
     match /shared/{id} {
-      allow get: if true;
+      allow get: if !('exp' in resource.data) || request.time < resource.data.exp;
     }
   }
 }

@@ -35,24 +35,16 @@
 
   // Firestore 문서 → 화면이 쓰는 모양(D)
   async function load() {
-    const [ex, an, ty, meta, dr, ai] = await Promise.all([
+    const [ex, an, ty, meta, dr, ai, mat, stu, res] = await Promise.all([
       db.collection('exams').get(), db.collection('analyses').get(), db.collection('types').get(), db.doc('meta/info').get(),
-      db.collection('drafts').get(), db.doc('meta/ai').get()]);
+      db.collection('drafts').get(), db.doc('meta/ai').get(),
+      db.collection('materials').get(), db.collection('students').get(), db.collection('results').get()]);
     if (ex.empty) return null;
     const types = ty.docs.map(d => d.data()).sort((a, b) =>
       a.course.localeCompare(b.course) || a.midNo.localeCompare(b.midNo) || a.typeNo.localeCompare(b.typeNo));
     const idx = {}; types.forEach((t, i) => { idx[t.code] = i; });
-    const DIFF = { 기본: 1, 응용: 2, 실력: 3, 심화: 4 };
-    const BEH = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
     const analyzed = {};
-    an.docs.forEach(d => {
-      const a = d.data();
-      analyzed[d.id] = {
-        level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,
-        items: (a.items || []).map(i => [i.no, i.pts, DIFF[i.diff] || 0, BEH[i.beh] || '', i.course || '', i.big || '', i.mid || '', i.type || '',
-          i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || ''])
-      };
-    });
+    an.docs.forEach(d => { analyzed[d.id] = window.sudoAnalysis(d.data(), idx); });
     const exams = ex.docs.map(d => {
       const e = d.data();
       return { id: d.id, s: e.school, m: e.main ? 1 : 0, y: e.year, g: e.grade, t: e.sem, x: e.exam,
@@ -60,9 +52,11 @@
         fl: (e.files || []).map(f => [f.path, f.role, f.variant || '']), pr: e.primary || '', n: e.notes || [] };
     });
     const m = meta.exists ? meta.data() : {};
+    const byId = snap => Object.fromEntries(snap.docs.map(d => [d.id, Object.assign({ id: d.id }, d.data())]));
     return { v: 1, built: m.built || '', root: m.root || '', exams, analyzed,
       catalog: types.map(t => [t.code, t.course, t.big, t.midNo, t.mid, t.typeNo, t.name || '']), predicted: m.predicted || [],
-      drafts: Object.fromEntries(dr.docs.map(d => [d.id, d.data()])), ai: ai.exists ? ai.data() : null };
+      drafts: Object.fromEntries(dr.docs.map(d => [d.id, d.data()])), ai: ai.exists ? ai.data() : null,
+      materials: byId(mat), students: byId(stu), results: byId(res) };
   }
 
   // 받은 데이터 파일(앱용 JSON)을 Firestore에 넣는다
@@ -110,24 +104,62 @@
       return screen(`<p>데이터를 불러오지 못했습니다: ${esc(e.message)}</p>`);
     }
     if (!D) return importScreen(user);
+    const now = () => new Date().toISOString();
+    const IMG = {};   // 문항 그림 (data URL) 기억해 두기
+    const strip = o => JSON.parse(JSON.stringify(o));  // undefined 값 빼기 (Firestore가 거부함)
+    async function putImgs(map) {
+      const ks = Object.keys(map || {}).filter(k => map[k]);
+      for (let k = 0; k < ks.length; k += 6) {
+        const b = db.batch();
+        ks.slice(k, k + 6).forEach(key => { IMG[key] = map[key]; b.set(db.collection('img').doc(key), { d: map[key], at: now() }); });
+        await b.commit();
+      }
+    }
     const ctx = {
       user: user.email,
       signOut: () => auth.signOut(),
-      shareReport: (id, data) => db.collection('shared').doc(id).set(data),
-      saveTypeName: (code, name) => db.collection('types').doc(code).update({ name, editedAt: new Date().toISOString() }),
+      // 공개 링크. days를 주면 그 날짜가 지나면 열리지 않음 (학생 분석지)
+      shareReport: (id, data, days) => db.collection('shared').doc(id).set(Object.assign({}, data,
+        days ? { exp: firebase.firestore.Timestamp.fromDate(new Date(Date.now() + days * 864e5)), expiresAt: new Date(Date.now() + days * 864e5).toISOString() } : {})),
+      saveTypeName: (code, name) => db.collection('types').doc(code).update({ name, editedAt: now() }),
       getToken: () => auth.currentUser.getIdToken(),
       saveAI: s => db.doc('meta/ai').set(s),
-      saveDraft: (id, d) => db.collection('drafts').doc(id).set(d),
+      saveDraft: (id, d) => db.collection('drafts').doc(id).set(strip(d)),
       deleteDraft: id => db.collection('drafts').doc(id).delete(),
-      // 검수 끝난 문항표 저장: 새 유형 → 시험(새 시험이면) → 분석 → 임시본 지우기를 한 번에
-      saveAnalysis: async ({ id, exam, analysis, newTypes }) => {
+      // 문항표 저장: 그림 → 새 유형 → 시험(새 시험이면) → 분석 → 임시본 지우기
+      saveAnalysis: async ({ id, exam, analysis, newTypes, imgs }) => {
+        await putImgs(imgs);
         const b = db.batch();
         (newTypes || []).forEach(t => b.set(db.collection('types').doc(t.code), t));
         if (exam) b.set(db.collection('exams').doc(id), exam, { merge: true });
-        b.set(db.collection('analyses').doc(id), analysis);
+        b.set(db.collection('analyses').doc(id), strip(analysis));
         b.delete(db.collection('drafts').doc(id));
         await b.commit();
-      }
+      },
+      saveImgs: putImgs,
+      // 그림 가져오기: {key: dataURL}
+      getImgs: async keys => {
+        const need = [...new Set(keys.filter(k => k && !(k in IMG)))];
+        for (let k = 0; k < need.length; k += 10) {
+          await Promise.all(need.slice(k, k + 10).map(key => db.collection('img').doc(key).get()
+            .then(s => { IMG[key] = s.exists ? s.data().d : ''; }, () => { IMG[key] = ''; })));
+        }
+        return Object.fromEntries(keys.filter(Boolean).map(k => [k, IMG[k] || '']));
+      },
+      imgCache: IMG,
+      saveMaterial: (id, d) => db.collection('materials').doc(id).set(strip(d)),
+      deleteMaterial: async (id, keys) => {
+        for (let k = 0; k < (keys || []).length; k += 400) { const b = db.batch(); keys.slice(k, k + 400).forEach(x => b.delete(db.collection('img').doc(x))); await b.commit(); }
+        await db.collection('materials').doc(id).delete();
+      },
+      saveStudent: (id, d) => db.collection('students').doc(id).set(strip(d)),
+      deleteStudent: async (id, resultIds) => {
+        const b = db.batch(); (resultIds || []).forEach(r => b.delete(db.collection('results').doc(r))); b.delete(db.collection('students').doc(id)); await b.commit();
+      },
+      saveResult: (id, d) => db.collection('results').doc(id).set(strip(d)),
+      deleteResult: id => db.collection('results').doc(id).delete(),
+      getSimilar: key => db.collection('similar').doc(key).get().then(s => s.exists ? s.data() : null, () => null),
+      saveSimilar: (key, d) => db.collection('similar').doc(key).set(strip(d)).catch(() => {})
     };
     if (!started) { started = true; window.startApp(D, ctx); }
     else location.reload();
