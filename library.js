@@ -14,7 +14,7 @@ window.SudoLibrary = function (H) {
   const L = {
     tab: 'academy', course: '전체', sel: null, pg: 1,
     found: { academy: null, school: null },   // 폴더에서 찾은 새 파일 [{file, rel, course, school, commercial, on}]
-    jobs: {}, running: false, queue: [],
+    jobs: {}, running: false, queue: [], stop: false, batch: { done: 0, total: 0 },
     thumbs: {},                                // matId → {pg: dataURL} (이번에 연 것만)
     form: { name: '', course: '중등2-2', unit: '', school: '', commercial: false, files: [] }
   };
@@ -47,6 +47,7 @@ window.SudoLibrary = function (H) {
       <div class="head"><div><div class="kicker">내신대비에 쓴 프린트를 문항 단위로 모아 유사문항을 찾는 데 씁니다</div><h1>자료실</h1></div>
         <div class="headact">${L.tab !== 'custom' ? `<label class="btn ghost" for="libDir">MYBOX에서 새 자료 확인</label>` : ''}<button type="button" class="btn" id="libAdd">개별 자료 추가</button></div></div>
       <input type="file" id="libDir" webkitdirectory multiple hidden>
+      ${L.running ? runBar() : ''}
       <div class="tiles">
         <div class="tile"><span>모은 자료</span><b>${all.length}개</b><span>학원 ${all.filter(m => m.src === 'academy').length} · 학교 프린트 ${all.filter(m => m.src === 'school').length} · 개별 ${all.filter(m => m.src === 'custom').length}</span></div>
         <div class="tile dark"><span>색인된 문항</span><b>${nProb}문항</b><span>유사문항 찾기에 쓰임</span></div>
@@ -66,9 +67,17 @@ window.SudoLibrary = function (H) {
     bind();
     loadThumbs();
   }
+  function runBar() {
+    const cur = Object.values(D.materials).find(m => L.jobs[m.id] && L.jobs[m.id].st === 'run');
+    const done = L.batch.done, tot = L.batch.total;
+    return `<div class="librun" role="status"><span class="spin" aria-hidden="true"></span>
+      <div><b>AI가 자료를 색인하는 중 · ${Math.min(done + 1, tot)} / ${tot}개</b><span>${cur ? `지금: ${esc(cur.name)} ${esc(L.jobs[cur.id].msg || '')}` : ''}${L.stop ? ' · 지금 읽는 자료까지만 하고 멈춥니다' : ''}</span></div>
+      <button type="button" class="btn ghost sm" id="libStop" ${L.stop ? 'disabled' : ''}>멈추기 <small>지금 읽는 자료까지만</small></button></div>`;
+  }
   function foundBox(list) {
     const on = list.filter(f => f.on).length;
     return `<div class="foundbox"><b>새 자료 ${list.length}개</b> <small>이미 색인한 파일은 빼고 보여 줍니다. 과정을 확인하고 색인할 것만 고르세요.</small>
+      <label class="chk allchk"><input type="checkbox" id="fAll" ${on && on === list.length ? 'checked' : ''}> <b>전체 선택</b> <small>${on}/${list.length}개 선택</small></label>
       <div class="flist">${list.map((f, k) => `<div class="frow2"><label class="chk"><input type="checkbox" data-fon="${k}" ${f.on ? 'checked' : ''}> <span title="${esc(f.rel)}">${esc(f.file.name)}</span></label>
         <select data-fco="${k}" aria-label="과정"><option value="">과정?</option>${COURSES.map(c => `<option ${c === f.course ? 'selected' : ''}>${c}</option>`).join('')}</select>
         ${L.tab === 'school' ? `<select data-fsc="${k}" aria-label="학교"><option value="">학교?</option>${H.schools.map(s => `<option ${s === f.school ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>` : `<label class="chk sm"><input type="checkbox" data-fcm="${k}" ${f.commercial ? 'checked' : ''}> 시중 교재</label>`}</div>`).join('')}</div>
@@ -158,7 +167,7 @@ window.SudoLibrary = function (H) {
         if (!okF(f.name) || /^~|^\./.test(f.name)) return;
         const rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name;
         if (known.has(rel + '|' + f.size)) return;
-        found.push({ file: f, rel, course: guessCourse(rel), school: src === 'school' ? guessSchool(rel) : '', commercial: src === 'academy' && COMMERCIAL.test(rel), on: true });
+        found.push({ file: f, rel, course: guessCourse(rel), school: src === 'school' ? guessSchool(rel) : '', commercial: src === 'academy' && COMMERCIAL.test(rel), on: false });
       });
       found.sort((a, b) => a.rel.localeCompare(b.rel, 'ko'));
       L.found[src] = found;
@@ -177,10 +186,26 @@ window.SudoLibrary = function (H) {
         const m = { id, src, name: f.file.name.replace(/\.[^.]+$/, ''), path: f.rel, size: f.file.size, ext: f.file.name.split('.').pop().toLowerCase(),
           course: f.course, unit: '', school: f.school || '', commercial: !!f.commercial, status: 'indexing', problems: [], addedAt: now() };
         D.materials[id] = m;
-        return { m, files: [f.file] };
+        return { m, files: [f.file], f, src };
       });
       L.found[src] = L.found[src].filter(f => !f.on);
       enqueue(jobs);
+    };
+    const fa = $('#fAll'); if (fa) {
+      const list = L.found[L.tab], on = list.filter(f => f.on).length;
+      fa.indeterminate = on > 0 && on < list.length;
+      fa.onchange = () => { list.forEach(f => { f.on = fa.checked; }); render(); };
+    }
+    const ls = $('#libStop'); if (ls) ls.onclick = () => {
+      L.stop = true;
+      const back = L.queue.splice(0);
+      back.forEach(j => {
+        delete D.materials[j.m.id]; delete L.jobs[j.m.id];
+        if (j.f) { j.f.on = false; (L.found[j.src] = L.found[j.src] || []).push(j.f); L.found[j.src].sort((a, b) => a.rel.localeCompare(b.rel, 'ko')); }
+      });
+      L.batch.total = L.batch.done + 1;
+      toast(back.length ? `대기 중이던 ${back.length}개는 새 자료 목록으로 돌려놓았습니다. 지금 읽는 자료까지만 하고 멈춥니다` : '지금 읽는 자료까지만 하고 멈춥니다');
+      render();
     };
     const lc = $('#libClear'); if (lc) lc.onclick = () => { L.found[L.tab] = null; render(); };
     // 개별 추가
@@ -270,14 +295,16 @@ window.SudoLibrary = function (H) {
 
   // ---------- AI 색인 ----------
   function enqueue(jobs) {
+    if (!L.running) L.batch = { done: 0, total: 0 };
+    L.batch.total += jobs.length;
     jobs.forEach(j => { L.jobs[j.m.id] = { st: 'wait', msg: '' }; L.queue.push(j); });
     render();
     if (!L.running) runQueue();
   }
   const paint = () => { if ((location.hash || '') === '#library') render(); };
   async function runQueue() {
-    L.running = true;
-    while (L.queue.length) {
+    L.running = true; L.stop = false;
+    while (L.queue.length && !L.stop) {
       const { m, files } = L.queue.shift();
       const J = L.jobs[m.id] = { st: 'run', msg: '쪽 여는 중' }; paint();
       const settings = REG.aiSettings();
@@ -321,9 +348,11 @@ window.SudoLibrary = function (H) {
         try { if (ctx) await ctx.saveMaterial(m.id, m); } catch (_) {}
         toast(`‘${m.name}’ 색인 실패: ${m.error}`);
       }
+      L.batch.done++;
       paint();
     }
-    L.running = false; paint();
+    if (L.stop) toast('색인을 멈췄습니다. 끝낸 자료는 저장됐습니다');
+    L.running = false; L.stop = false; paint();
   }
   return { render, busy: () => L.running };
 };
