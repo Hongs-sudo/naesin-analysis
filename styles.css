@@ -581,3 +581,11 @@ body[data-mode="phone"] .job .dl { display: none }
 .librun { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; background: var(--brand-soft) }
 .librun > div { flex: 1 1 300px; display: flex; flex-direction: column } .librun span { font-size: 12.5px; color: var(--muted) }
 .allchk { border-bottom: 1px solid var(--line-2); padding-bottom: 4px; min-height: 34px } .allchk small { color: var(--muted) }
+/* 인쇄: 분석지는 항상 색을 넣고, 한 쪽을 A4 안에 딱 맞춤 (넘친 빈 장 방지) */
+@media print {
+  .rpt, .rpt * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important }
+  .preview { display: block !important; gap: 0 !important }
+  .pgwrap { break-after: page; break-inside: avoid; margin: 0 !important; padding: 0 !important; height: 296mm; overflow: hidden }
+  .pgwrap:last-child { break-after: auto }
+  .rpt[data-a4] { zoom: .995 }
+}
