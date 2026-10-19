@@ -1,11 +1,11 @@
 // 수도 내신분석 — 화면 (PC · 아이패드 · 휴대폰)
 // 문항 한 줄(저장 모양) → 화면이 쓰는 배열
-// [0 no, 1 pts, 2 diff, 3 beh, 4 course, 5 big, 6 mid, 7 type, 8 catalog idx, 9 essay, 10 ans, 11 sol, 12 q(핵심 내용), 13 ik(그림 키), 14 conf, 15 pg, 16 box]
+// [0 no, 1 pts, 2 diff, 3 beh, 4 course, 5 big, 6 mid, 7 type, 8 catalog idx, 9 essay, 10 ans, 11 sol, 12 q(핵심 내용), 13 ik(그림 키), 14 conf, 15 pg, 16 box, 17 bs(영역을 잡은 방법: text·num·pin·manual, 빈칸=AI 짐작)]
 window.sudoItemArr = function (i, idx) {
   const DI = { 기본: 1, 응용: 2, 실력: 3, 심화: 4 }, BI = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
   return [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course || '', i.big || '', i.mid || '', i.type || '',
     i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || '',
-    i.q || '', i.ik || '', typeof i.conf === 'number' ? i.conf : 1, i.pg || 0, i.box || null];
+    i.q || '', i.ik || '', typeof i.conf === 'number' ? i.conf : 1, i.pg || 0, i.box || null, i.bs || ''];
 };
 window.sudoAnalysis = function (a, idx) {
   return { level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,
@@ -136,10 +136,23 @@ window.startApp = function (D, ctx) {
       const beh = { U: 0, C: 0, R: 0, P: 0 }; p.an.items.forEach(i => { if (beh[i[3]] !== undefined) beh[i[3]] += i[1]; });
       return { label: `${p.y} ${p.x}`, top: topPts(p), cnt: diffCounts(p.an.items), beh };
     },
-    schoolHistory(s) { return D.exams.filter(x => x.s === s && x.an).sort(order).map(x => ({ id: x.id, top: topPts(x), label: `${x.g}-${x.t} ${x.x}` })); },
+    // 같은 학교 · 같은 학년 시험만 (이번 시험까지, 시간 순서)
+    schoolHistory(e) {
+      return D.exams.filter(x => x.s === e.s && x.g === e.g && x.an && order(x, e) <= 0).sort(order)
+        .map(x => ({ id: x.id, y: x.y, top: topPts(x), label: `${x.g}-${x.t} ${x.x}` }));
+    },
+    // 이번 · 지난 학기 같은 시험 · 작년 같은 시험 (모두 같은 학교 · 같은 학년 · 같은 시험 종류)
+    gradeCompare(e) {
+      const pick = (y, t) => D.exams.find(x => x.s === e.s && x.g === e.g && x.x === e.x && x.y === y && x.t === t && x.an);
+      const one = (x, kind) => x ? { id: x.id, kind, label: `${x.y} ${x.g}-${x.t} ${x.x}`, top: topPts(x), deep: x.an.items.filter(i => i[2] === 4).length, essay: x.an.items.filter(i => i[9]).length, cnt: diffCounts(x.an.items), n: x.an.items.length } : null;
+      const prevSem = e.t === 2 ? pick(e.y, 1) : pick(e.y - 1, 2);
+      return { me: one(e, '이번'), sem: one(prevSem, '지난 학기'), year: one(pick(e.y - 1, e.t), '작년 같은 시험'),
+        semLabel: e.t === 2 ? `${e.y} ${e.g}-1 ${e.x}` : `${e.y - 1} ${e.g}-2 ${e.x}`, yearLabel: `${e.y - 1} ${e.g}-${e.t} ${e.x}` };
+    },
+    // 다른 학교: 같은 해 · 같은 과정 · 같은 시험 종류(중간끼리, 기말끼리)만
     sameCourse(e) {
-      return D.exams.filter(x => x.an && x.g === e.g && x.t === e.t && x.y === e.y).sort((a, b) => (b === e) - (a === e) || a.s.localeCompare(b.s, 'ko'))
-        .map(x => ({ id: x.id, label: `${short(x.s)}중 ${x.x}${x === e ? ' (이번)' : ''}`, cnt: diffCounts(x.an.items), n: x.an.items.length }));
+      return D.exams.filter(x => x.an && x.g === e.g && x.t === e.t && x.y === e.y && x.x === e.x).sort((a, b) => (b === e) - (a === e) || a.s.localeCompare(b.s, 'ko'))
+        .map(x => ({ id: x.id, y: x.y, label: `${short(x.s)}중 ${x.x}${x === e ? ' (이번)' : ''}`, cnt: diffCounts(x.an.items), n: x.an.items.length }));
     },
     commonTypes(e) {
       const out = [];
@@ -770,11 +783,26 @@ window.startApp = function (D, ctx) {
   const LIB = window.SudoLibrary(H2);
   const STU = window.SudoStudents(H2);
   const MB = window.SudoMembers(H2);
+  // MYBOX: 찾은 시험지 파일을 보관함 시험에 붙이기 (새 시험이면 만들기)
+  function addExamFiles(id, doc, files) {
+    let e = byId[id];
+    if (!e) {
+      e = { id, s: doc.school, m: doc.main ? 1 : 0, y: doc.year, g: doc.grade, t: doc.sem, x: doc.exam, p: doc.hasPaper ? 1 : 0, a: doc.hasAnswer ? 1 : 0, sc: 0, r: 0, f: doc.formats || [], fl: [], pr: doc.primary || '', n: doc.notes || [], st: null };
+      D.exams.push(e); byId[id] = e;
+    }
+    files.forEach(f => { if (!e.fl.some(x => x[0] === f.path)) e.fl.push([f.path, f.role, f.variant || '']); });
+    if (doc.primary !== undefined) e.pr = doc.primary;
+    if (doc.hasPaper) e.p = 1; if (doc.hasAnswer) e.a = 1;
+    listsRefresh();
+    const sc = $('#sideCount'); if (sc) sc.textContent = `${D.exams.length}개 시험 · ${schools.length}개 학교`;
+  }
+  const MYB = window.SudoMybox({ D, ctx, byId, esc, toast, $, $$, MAIN4, addExamFiles, libFound: () => LIB.foundCount(), openPre: () => REG.openPre(), afterScan: () => LIB.fromMybox() });
+  window.__mybox = MYB;
   // 권한별로 보이는 화면
   const ROLEN = { owner: '원장', co: '원장(공동)', admin: '관리자', teacher: '선생님' };
   const CAN = (ctx && ctx.can) || { school: true, register: true, library: true, types: true, members: false, remove: true, allStudents: true, aiSettings: true };
   const ME = (ctx && ctx.me) || { role: 'owner', name: '원장' };
-  const VIEWS = CAN.school ? ['archive', 'school', 'types', 'library', 'students', 'output', 'register', 'factory'].concat(CAN.members ? ['members'] : []) : ['students', 'output'];
+  const VIEWS = CAN.school ? ['archive', 'school', 'types', 'library', 'students', 'output', 'register', 'mybox', 'factory'].concat(CAN.members ? ['members'] : []) : ['students', 'output'];
   $$('[data-v]').forEach(a => { if (!VIEWS.includes(a.dataset.v)) a.style.display = 'none'; });
   if (!CAN.school) OUT.kind = 'student';
   if (!NOTE.by && ME.role !== 'owner' && ME.name) NOTE.by = `수학도서관 ${ME.name} 선생님`;
@@ -793,13 +821,14 @@ window.startApp = function (D, ctx) {
   function route() {
     let v = (location.hash || '').slice(1) || VIEWS[0];
     if (!VIEWS.includes(v)) v = VIEWS[0];
-    if (MODE === 'phone' && (SOON[v] || v === 'register' || v === 'library')) v = 'archive';
+    if (MODE === 'phone' && (SOON[v] || v === 'register' || v === 'library' || v === 'mybox')) v = 'archive';
     if (v !== 'school') consult = false;
     $$('[data-v]').forEach(a => { const on = a.dataset.v === v; a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     if (v === 'school') renderSchool(); else if (v === 'types') renderTypes(); else if (v === 'output') renderOutput(); else if (v === 'register') REG.render();
-    else if (v === 'library') LIB.render(); else if (v === 'students') STU.render(); else if (v === 'members') MB.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
+    else if (v === 'library') LIB.render(); else if (v === 'students') STU.render(); else if (v === 'members') MB.render(); else if (v === 'mybox') MYB.render(); else if (SOON[v]) renderSoon(v); else renderArchive();
     if (v !== lastView) window.scrollTo(0, 0);
     lastView = v;
+    MYB.banner();
   }
   $('#sideNote').innerHTML = `<span id="sideCount">${D.exams.length}개 시험 · ${schools.length}개 학교</span><br>데이터 기준일 ${esc(D.built)}`
     + (ctx ? `<br>${esc(ctx.user)} <span class="rolechip">${ROLEN[ME.role] || ''}</span> <button type="button" class="linkbtn" id="logout">로그아웃</button>` : '');

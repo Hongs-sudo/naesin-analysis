@@ -623,3 +623,47 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 .rolelist { display: flex; flex-direction: column; gap: 8px; font-size: 13px } .rolelist > div { display: flex; gap: 10px; align-items: center }
 .addform .sel input:disabled { background: var(--surface-2) }
 .rolechip { display: inline-block; margin-left: 4px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--gold); color: var(--side) }
+
+/* 번호 찍기 · 문항 위치 확인 */
+.bp-marks { position: absolute; inset: 0; pointer-events: none }
+.bp-marks i { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--d3); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25) }
+.bp-marks i.mine { background: var(--gold) }
+.bp-marks span { position: absolute; left: 12px; top: -6px; font-size: 11px; font-style: normal; font-weight: 700; color: #fff; background: var(--d3); padding: 0 5px; border-radius: 4px; white-space: nowrap }
+.bp-marks i.mine span { background: var(--gold) }
+.pinno { display: inline-block; background: var(--gold); color: #fff; border-radius: 6px; padding: 0 8px; margin-right: 4px }
+.locbar { display: flex; flex-direction: column; gap: 10px }
+.locbar .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap }
+.locchips { display: flex; flex-wrap: wrap; gap: 4px }
+.locchips button { min-width: 34px; height: 28px; padding: 0 7px; border-radius: 6px; border: 1px solid transparent; font: inherit; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; background: var(--brand-soft); color: var(--brand) }
+.locchips button.miss { background: #FBE9E1; color: #B4441C; border: 1px dashed #B4441C }
+.locchips button.hand { background: var(--gold-soft); color: var(--gold-fg) }
+.locchips button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px }
+.loclegend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted) }
+.loclegend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; background: var(--brand-soft) }
+.loclegend i.miss { background: #FBE9E1; border: 1px dashed #B4441C }
+.loclegend i.hand { background: var(--gold-soft) }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .locchips button.miss { background: #3A221A; color: #F0916B; border-color: #F0916B } }
+:root[data-theme="dark"] .locchips button.miss { background: #3A221A; color: #F0916B; border-color: #F0916B }
+
+/* MYBOX 연결 */
+.mainwrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column }
+.mbbanner { margin: 16px clamp(16px, 3vw, 40px) 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--gold-soft); color: var(--gold-fg); border-radius: 12px; padding: 10px 14px; font-size: 14px }
+.mbbanner small { opacity: .8 }
+.mbbanner .row2 { display: flex; gap: 8px }
+.mbstart { display: flex; flex-direction: column; gap: 12px; align-items: flex-start }
+.mbsteps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--fg-2) }
+.mbtbl { width: 100%; border-collapse: collapse; font-size: 14px }
+.mbtbl th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--line) }
+.mbtbl td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top }
+.mbtbl td.num { font-variant-numeric: tabular-nums; white-space: nowrap }
+.mbpath { font-size: 12px; color: var(--muted); word-break: break-all }
+.mbcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px }
+.mbc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start }
+.mbc small { color: var(--muted); font-size: 12px }
+.mbc b { font-size: 24px; color: var(--brand); font-variant-numeric: tabular-nums }
+.mbc span { font-size: 13px; color: var(--fg-2) }
+.mbc .btn { margin-top: 6px }
+.mbadded { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px }
+.mbadded div { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; padding: 4px 0; border-bottom: 1px solid var(--line) }
+@media print { .mbbanner { display: none !important } }
+.mbbanner[hidden] { display: none }

@@ -176,6 +176,8 @@
         await b.commit();
       },
       saveImgs: putImgs,
+      // MYBOX에서 찾은 시험지 파일을 시험에 붙이기 (새 시험이면 만들기)
+      saveExamFiles: (id, doc, files) => db.collection('exams').doc(id).set(Object.assign(strip(doc), { files: firebase.firestore.FieldValue.arrayUnion(...files.map(f => strip(f))) }), { merge: true }),
       // 학교 성적 자료 (학교알리미 학기 자료 · 학교 발표). stats=null이면 지움
       saveExamStats: async (ids, stats) => {
         const b = db.batch();

@@ -84,7 +84,7 @@ window.SudoRegister = function (H) {
     const rows = e.an.items.map(i => {
       const r = emptyRow(i[0]);
       Object.assign(r, { pts: i[1] || (ai ? '' : i[1]), diff: i[2], beh: i[3], essay: i[9], big: i[5], mid: i[6], type: i[7], code: i[8] >= 0 ? D.catalog[i[8]][0] : '', ans: i[10] || '', sol: i[11] || '',
-        q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null });
+        q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, boxSrc: i[17] || '' });
       if (ai) r.ok = r.conf >= 0.7 && r.pts !== '' ? 1 : 0;
       return r;
     });
@@ -95,7 +95,7 @@ window.SudoRegister = function (H) {
   function docFromAn(an) {
     return { level: an.level || null, cuts: an.cuts || {}, essay: an.essay || 0, source: an.source || null, status: an.status || 'checked',
       items: an.items.map(i => ({ no: i[0], pts: i[1], diff: DIFF[i[2]] || '', beh: BEH[i[3]] || '', course: i[4], big: i[5], mid: i[6], type: i[7],
-        code: i[8] >= 0 ? D.catalog[i[8]][0] : '', essay: !!i[9], ans: i[10] || '', sol: i[11] || '', q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null })) };
+        code: i[8] >= 0 ? D.catalog[i[8]][0] : '', essay: !!i[9], ans: i[10] || '', sol: i[11] || '', q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, bs: i[17] || '' })) };
   }
   // 문항 영역 잘라 그림 만들기 → {key: dataURL}
   function cropRows(rows, pages, id) {
@@ -285,7 +285,8 @@ window.SudoRegister = function (H) {
       d.warnings = result.warnings || [];
       if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
       const snapped = window.SudoPages.snap(d.rows, pages, 0);
-      if (snapped) d.warnings.push(`문항 영역 ${snapped}개는 PDF 글자 위치로 정확히 맞췄습니다`);
+      const nMiss = d.rows.length - snapped;
+      d.warnings.push(`문항 영역: ${d.rows.length}문항 중 ${snapped}개를 번호 위치로 맞췄습니다${nMiss > 0 ? ` · ${nMiss}개는 아래 ‘문항 위치’에서 번호 찍기로 채워 주세요` : ''}`);
       const imgs = cropRows(d.rows, pages, d.id);
       R.files = []; R.pages = pages;
       try { if (ctx) await ctx.saveImgs(imgs); } catch (_) { d.warnings.push('문항 그림 일부를 저장하지 못했습니다. 저장할 때 다시 시도합니다'); d.pendingImgs = 1; }
@@ -332,12 +333,25 @@ window.SudoRegister = function (H) {
         <label class="kpi sel"><span>시험 난이도</span><select id="rvLevel"><option value="">고르기</option>${LEVELS.map(l => `<option ${l === d.level ? 'selected' : ''}>${l}</option>`).join('')}</select><small>제안: ${suggestLevel(rows)} (실력·심화 배점 기준)</small></label>
       </div>
       ${d.warnings && d.warnings.length ? `<div class="callout">${d.warnings.map(w => esc(w)).join('<br>')}</div>` : ''}
+      ${locCard(rows)}
       <section class="card cuts"><div class="head"><h2>학교 성적 자료 <small>선택 · 학교알리미 학기 자료나 학교 발표 평균·A~E 비율</small></h2>${byId[d.id] ? `<button type="button" class="btn ghost sm" id="rvStats">${byId[d.id].st ? '고치기 ✓' : '넣기'}</button>` : '<span class="dl">새 시험은 저장한 뒤 보관함에서 넣을 수 있습니다</span>'}</div></section>
       <div class="tablewrap rvwrap"><table class="rvtbl">
         <thead><tr><th>그림</th><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
         <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id, showAns)).join('')}</tbody></table></div>
-      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${R.pages ? '' : `<label class="btn ghost sm" for="rvPages">시험지 파일 다시 열기 <small>문항 영역 고칠 때</small></label><input type="file" id="rvPages" accept="${ACCEPT}" multiple hidden>`}${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}${R.pages ? '<button type="button" class="btn ghost sm" id="rvSnap">글자 위치로 다시 맞추기</button>' : ''}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
+      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${R.pages ? '' : `<label class="btn ghost sm" for="rvPages">시험지 파일 다시 열기 <small>문항 영역 고칠 때</small></label><input type="file" id="rvPages" accept="${ACCEPT}" multiple hidden>`}${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
     bindReview();
+  }
+  // 문항 위치: 번호로 찾은 문항(초록) · 직접 찍거나 고친 문항(금색) · AI 짐작뿐인 문항(빨강)
+  const FOUND = ['text', 'num'], HAND = ['pin', 'manual'];
+  const locOf = r => FOUND.includes(r.boxSrc) ? 'ok' : HAND.includes(r.boxSrc) ? 'hand' : 'miss';
+  function locCard(rows) {
+    const list = rows.slice().sort((a, b) => (+a.essay || 0) - (+b.essay || 0) || a.no - b.no);
+    const nOk = rows.filter(r => locOf(r) === 'ok').length, nHand = rows.filter(r => locOf(r) === 'hand').length, nMiss = rows.length - nOk - nHand;
+    return `<section class="card locbar" aria-label="문항 위치 확인"><div class="head"><h2>문항 위치 <small>${rows.length}문항 중 ${nOk}개 번호로 찾음${nHand ? ` · ${nHand}개 직접` : ''}${nMiss ? ` · <b class="goldt">${nMiss}개 못 찾음</b>` : ''}</small></h2>
+      <div class="row2">${R.pages ? `<button type="button" class="btn ghost sm" id="rvSnap">번호 기준으로 다시 잡기</button><button type="button" class="btn sm" id="rvPin" ${nMiss ? '' : 'disabled'}>${nMiss ? `번호 찍기로 ${nMiss}개 채우기` : '모두 찾음'}</button>`
+        : `${mbExamFile(R.draft.id, R.draft) ? '<button type="button" class="btn sm" id="rvMb">MYBOX에서 시험지 열기</button>' : ''}<label class="btn ghost sm" for="rvPages2">시험지 파일 열기 <small>번호 확인·찍기</small></label><input type="file" id="rvPages2" accept="${ACCEPT}" multiple hidden>`}</div></div>
+      <div class="locchips">${list.map(r => `<button type="button" class="${locOf(r) === 'ok' ? '' : locOf(r)}" data-loc="${rows.indexOf(r)}" title="${r.no}번 · ${{ text: 'PDF 글자로 번호 찾음', num: '그림에서 번호 찾음', pin: '번호 직접 찍음', manual: '영역 직접 고침' }[r.boxSrc] || 'AI 짐작 (번호를 못 찾음)'}">${r.essay ? '서' : ''}${r.no}</button>`).join('')}</div>
+      <div class="loclegend"><span><i></i>번호로 찾음</span><span><i class="hand"></i>직접 찍음·고침</span><span><i class="miss"></i>못 찾음 (AI 짐작) · 누르면 영역을 고칠 수 있습니다</span></div></section>`;
   }
   function rowHtml(r, i, course, mids, selfId, showAns) {
     const types = r.mid ? typesOf(course, r.mid) : [];
@@ -377,14 +391,46 @@ window.SudoRegister = function (H) {
       catch (e) { toast(e.message); }
     };
     loadThumbs();
-    const sn = $('#rvSnap'); if (sn) sn.onclick = async () => {
-      const list = d.rows.filter(r => r.boxSrc !== 'manual');
-      const hit = window.SudoPages.snap(list, R.pages, 0);
-      if (!hit) { toast('글자 위치를 찾지 못했습니다 (사진·스캔본이면 영역을 직접 고쳐 주세요)'); return; }
-      const imgs = cropRows(list.filter(r => r.boxSrc === 'text'), R.pages, d.id);
+    const saveCrops = async list => {
+      const imgs = cropRows(list, R.pages, d.id);
       try { if (ctx) await ctx.saveImgs(imgs); else Object.assign(H.imgCache || {}, imgs); } catch (e) { toast('그림 저장 실패: ' + e.message); }
-      touch(true); toast(`${hit}문항을 글자 위치로 맞췄습니다`);
     };
+    const sn = $('#rvSnap'); if (sn) sn.onclick = async () => {
+      sn.disabled = true; sn.textContent = '번호 찾는 중…';
+      await new Promise(r => setTimeout(r, 30));
+      d.rows.forEach(r => { if (FOUND.includes(r.boxSrc)) r.boxSrc = ''; });
+      const hit = window.SudoPages.snap(d.rows, R.pages, 0);
+      await saveCrops(d.rows.filter(r => FOUND.includes(r.boxSrc)));
+      const miss = d.rows.filter(r => locOf(r) === 'miss').length;
+      touch(true); toast(hit ? `${hit}문항을 번호 위치로 맞췄습니다${miss ? ` · ${miss}문항은 ‘번호 찍기’로 채워 주세요` : ''}` : '번호를 찾지 못했습니다. ‘번호 찍기’로 번호를 눌러 주세요');
+    };
+    const pn = $('#rvPin'); if (pn) pn.onclick = async () => {
+      const miss = d.rows.filter(r => locOf(r) === 'miss').sort((a, b) => (+a.essay || 0) - (+b.essay || 0) || a.no - b.no);
+      const near = r => { const o = d.rows.filter(x => x.pg && x !== r).sort((a, b) => Math.abs(a.no - r.no) - Math.abs(b.no - r.no))[0]; return r.pg || (o && o.pg) || 1; };
+      const marks = d.rows.filter(r => locOf(r) !== 'miss' && r.pg && (r.an || r.box)).map(r => ({ pg: r.pg, an: r.an || [r.box[0] + 8, r.box[1] + 6], label: r.no }));
+      const got = await window.SudoPages.pickNumbers(R.pages, miss.map(r => ({ label: r.no, pg: near(r) })), marks);
+      if (!got || !got.length) return;
+      got.forEach(g => { const r = miss[g.k]; r.pg = g.pg; r.an = g.an; r.boxSrc = 'pin'; });
+      const pgs = [...new Set(got.map(g => g.pg))];
+      window.SudoPages.pinBoxes(d.rows, R.pages, 0, pgs);
+      await saveCrops(d.rows.filter(r => pgs.includes(r.pg) && (FOUND.includes(r.boxSrc) || r.boxSrc === 'pin')));
+      touch(true); toast(`${got.length}문항의 번호를 찍어 영역을 만들었습니다`);
+    };
+    const rp2 = $('#rvPages2'); if (rp2) rp2.onchange = async () => {
+      try { toast('시험지를 여는 중…'); R.pages = await window.SudoPages.load([...rp2.files]); toast(`${R.pages.length}쪽을 열었습니다. ‘번호 기준으로 다시 잡기’를 누르세요`); renderReview(); }
+      catch (e) { toast(e.message); }
+    };
+    const rm = $('#rvMb'); if (rm) rm.onclick = async () => {
+      const f = mbExamFile(d.id, d); if (!f) return;
+      rm.disabled = true; rm.textContent = '여는 중…';
+      try { R.pages = await window.SudoPages.load([f]); toast(`MYBOX에서 ${f.name} ${R.pages.length}쪽을 열었습니다`); renderReview(); }
+      catch (e) { toast(e.message); rm.disabled = false; }
+    };
+    $$('[data-loc]').forEach(b => b.onclick = () => {
+      const tr = document.querySelector(`.rvtbl tbody tr[data-i="${b.dataset.loc}"]`); if (!tr) return;
+      const rb = $('[data-rebox]', tr);
+      if (rb) rb.click(); else { tr.scrollIntoView({ block: 'center' }); toast('영역을 고치려면 먼저 시험지 파일을 열어 주세요'); }
+    });
     $('#rvAdd').onclick = () => { d.rows.push(emptyRow((d.rows.reduce((m, r) => Math.max(m, +r.no || 0), 0)) + 1)); touch(true); };
     $$('.rvtbl tbody tr').forEach(tr => {
       const r = d.rows[+tr.dataset.i];
@@ -468,7 +514,7 @@ window.SudoRegister = function (H) {
     const analysis = {
       level: d.level || null, cuts: d.cuts || {}, essay: rows.filter(r => r.essay).length, status: 'checked',
       items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay, ans: r.ans || '', sol: r.sol || '',
-        q: r.q || '', ik: r.ik || '', pg: r.pg || 0, box: r.box || null })),
+        q: r.q || '', ik: r.ik || '', pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '' })),
       source: Object.assign({}, d.source || {}, { checkedAt: now() }), savedAt: now()
     };
     delete analysis.source.review;
@@ -531,10 +577,28 @@ window.SudoRegister = function (H) {
   }
   const preExcluded = () => D.exams.filter(e => !e.an && P.years.includes(e.y) && inGroup(e) && e.p && !readable(e));
   const fillCands = () => D.exams.filter(e => e.an && e.an.status !== 'ai' && !e.an.items.some(i => i[13]) && readable(e) && (!P.map || filesFor(e)));
+  // 번호 기준으로 다시 잡을 시험: 분석은 있는데 번호로 확인하지 않은 문항이 남은 시험
+  const LOCATED = ['text', 'num', 'pin', 'manual'];
+  const snapCands = () => D.exams.filter(e => e.an && e.an.items.some(i => !LOCATED.includes(i[17])) && readable(e) && (!P.map || filesFor(e)));
   const fmtDur = s => s >= 3600 ? `${Math.floor(s / 3600)}시간 ${Math.round(s % 3600 / 60)}분` : `${Math.max(1, Math.round(s / 60))}분`;
   const PHASES = [['1차', [2026, 2025], '지금 분석지에 바로 쓰이는 시험'], ['2차', [2024, 2023, 2022], '연도별로 나눠 하루 한 해씩 권장']];
 
+  // MYBOX가 연결돼 있으면 폴더를 고르지 않아도 자동으로 씀
+  function mbMap() {
+    const mb = window.__mybox; if (!mb || !mb.ready()) return false;
+    const keys = new Set(D.exams.flatMap(e => e.fl.map(f => f[0]))), M = new Map();
+    mb.examMap().forEach((f, p) => { if (keys.has(p)) M.set(p, f); });
+    P.map = M; P.nFiles = M.size; P.fromMb = true; return true;
+  }
+  // 검수 화면: 이 시험을 분석할 때 쓴 파일(없으면 대표 시험지)을 MYBOX에서 찾기
+  function mbExamFile(id, d) {
+    const mb = window.__mybox, e = byId[id]; if (!mb || !mb.ready() || !e) return null;
+    const used = ((d && d.source && d.source.files) || [])[0];
+    const pick = (used && e.fl.find(f => f[0].split('/').pop() === used)) || (e.pr && e.fl.find(f => f[0] === e.pr)) || e.fl.find(f => (f[1] === 'P' || f[1] === 'PA') && /\.(pdf|jpe?g|png)$/i.test(f[0]));
+    return pick ? mb.fileOf('exam', pick[0]) || null : null;
+  }
   function renderPre() {
+    if (!P.map || P.fromMb) mbMap();
     const cands = preCands(), ex = preExcluded();
     const allYears = [...new Set(D.exams.map(e => e.y))].sort((a, b) => b - a).slice(0, 6);
     const nAI = D.exams.filter(e => e.an && e.an.status === 'ai').length, nChk = D.exams.filter(e => e.an && e.an.status !== 'ai').length;
@@ -552,7 +616,7 @@ window.SudoRegister = function (H) {
         <div class="tile"><span>이미 분석됨</span><b>${nChk + nAI}건</b><span>검수 완료 ${nChk} · 검수 전 ${nAI}</span></div></div>
       <div class="pregrid">
         <section class="card"><h2>무엇을 미리 분석할까요</h2>
-          ${P.map ? `<div class="folderok"><b>MYBOX ‘B. 학교별 기출문제’ 연결됨</b><span>파일 ${P.nFiles}개를 찾았습니다 · 폴더에는 아무것도 쓰지 않습니다</span><label class="btn ghost sm" for="preDir">다시 고르기</label></div>`
+          ${P.map ? `<div class="folderok"><b>MYBOX ‘B. 학교별 기출문제’ 연결됨${P.fromMb ? ' (자동)' : ''}</b><span>파일 ${P.nFiles}개를 찾았습니다 · 폴더에는 아무것도 쓰지 않습니다${P.fromMb ? ' · 새 파일은 10분마다 자동으로 찾습니다' : ''}</span>${P.fromMb ? '<a class="btn ghost sm" href="#mybox">MYBOX 연결 보기</a>' : '<label class="btn ghost sm" for="preDir">다시 고르기</label>'}</div>`
             : `<div class="folderok off"><b>먼저 MYBOX 폴더를 골라 주세요</b><span>N:\\공유\\공유받은\\2026 중등부\\A. 내신대비\\<b>B. 학교별 기출문제</b> 폴더를 통째로 고릅니다. 이 컴퓨터에서 바로 읽고, 폴더에는 아무것도 쓰지 않습니다.</span><label class="btn sm" for="preDir">폴더 고르기</label></div>`}
           <input type="file" id="preDir" webkitdirectory multiple hidden>
           <div class="fgroup"><span class="lab">연도</span><div class="chips">${allYears.map(y => chip('data-py', y, `${y} · ${preCands(y).length}건`, P.years.includes(y))).join('')}</div><small class="dl">숫자는 PDF·사진이 있어 바로 읽을 수 있는 분석 전 시험 수입니다.</small></div>
@@ -567,7 +631,7 @@ window.SudoRegister = function (H) {
             <button type="button" class="btn ghost big" id="preTry" ${cands.length && R.ai.url && P.map ? '' : 'disabled'}>먼저 3건 시험해 보기</button>
             <button type="button" class="btn big" id="preAll" ${cands.length && R.ai.url && P.map ? '' : 'disabled'}>${cands.length}건 모두 시작</button></div>`}
           ${P.running ? '' : !R.ai.url ? '<p class="callout why">버튼이 잠긴 이유: AI 연결이 아직 안 됐습니다. ‘한 건씩 등록’ 화면의 AI 연결을 먼저 마쳐 주세요.</p>'
-            : !P.map ? '<p class="callout why">버튼이 잠긴 이유: MYBOX 폴더가 연결되지 않았습니다. 위 ‘폴더 고르기’로 ‘B. 학교별 기출문제’ 폴더를 골라 주세요. (새로 고침하면 다시 골라야 합니다)</p>'
+            : !P.map ? '<p class="callout why">버튼이 잠긴 이유: MYBOX 폴더가 연결되지 않았습니다. 왼쪽 메뉴 ‘MYBOX 연결’에서 한 번 연결해 두면 자동으로 쓰고, 지금 한 번만 쓰려면 위 ‘폴더 고르기’로 ‘B. 학교별 기출문제’ 폴더를 골라 주세요.</p>'
             : !cands.length ? '<p class="callout why">버튼이 잠긴 이유: 고른 연도·학교에 분석할 시험이 없습니다. 연도나 학교를 더 켜 보세요.</p>' : ''}
           <div class="phases"><b>나눠서 진행하기 (권장 순서)</b>${PHASES.map(([k, ys, sub]) => {
             const tot = D.exams.filter(e => ys.includes(e.y) && readable(e)), done = tot.filter(e => e.an).length;
@@ -577,6 +641,8 @@ window.SudoRegister = function (H) {
           ${ex.length ? `<details class="exd"><summary>제외된 시험 ${ex.length}건 — 한글 파일만 있음</summary><div class="exl">${ex.map(e => `<div><span>${esc(e.s)} ${e.y} ${e.g}-${e.t} ${esc(e.x)}</span><span class="goldt">PDF로 저장 필요</span></div>`).join('')}</div></details>` : ''}
           ${nChk ? `<div class="fillbox"><b>검수 끝난 시험에 문항 그림 채우기</b><span>예전에 검수한 시험 중 문항 그림·핵심 내용이 없는 ${fc.length}건${P.map ? '' : ' (폴더를 고르면 셉니다)'}. 유사문항에 그림을 넣으려면 필요합니다. 문항표(배점·난이도·유형)는 바꾸지 않습니다.</span>
             <button type="button" class="btn ghost sm" id="preFill" ${fc.length && R.ai.url && P.map && !P.running ? '' : 'disabled'}>${fc.length}건 그림 채우기</button></div>` : ''}
+          ${nChk + nAI ? (() => { const sc = snapCands(); return `<div class="fillbox"><b>문항 영역을 번호 기준으로 다시 잡기</b><span>이미 분석한 시험 중 문항 영역을 번호로 확인하지 않은 ${sc.length}건${P.map ? '' : ' (폴더를 고르면 셉니다)'}. 각 문항 왼쪽 위 번호를 찾아 문항 그림을 다시 자릅니다. AI를 쓰지 않아 사용 한도에서 빠지지 않고, 배점·난이도·유형은 그대로입니다.</span>
+            <button type="button" class="btn ghost sm" id="preSnap" ${sc.length && P.map && !P.running ? '' : 'disabled'}>${sc.length}건 다시 잡기</button></div>`; })() : ''}
         </section>
         <section class="card" aria-label="진행 상황"><div class="head"><h2>진행 상황 <small>${P.list.length ? `${st.done} / ${P.list.length}건${P.running && st.wait + st.run ? ` · 남은 시간 약 ${fmtDur((st.wait + st.run) * avgSecs / P.conc)}` : ''}` : '아직 시작 전'}</small></h2>
             ${!P.running && st.fail ? '<button type="button" class="btn ghost sm" id="preRetry">실패한 것 다시</button>' : ''}</div>
@@ -584,7 +650,7 @@ window.SudoRegister = function (H) {
           <div class="pcnt"><span><b>${st.done}</b> 완료(검수 전)</span><span><b>${st.run}</b> 읽는 중</span><span><b class="goldt">${st.fail}</b> 다시 필요</span><span><b>${st.wait}</b> 대기</span></div>
           <p class="dl tip">이 창을 닫으면 지금 읽는 것까지만 끝나고 멈춥니다. 다시 열어 폴더를 고르고 시작하면 남은 시험부터 이어서 합니다.</p>
           ${P.usage.n ? `<p class="dl">사용량: ${P.usage.n}건 · 입력 ${Math.round(P.usage.in / 1000)}천 · 출력 ${Math.round(P.usage.out / 1000)}천 토큰 (한 건 평균 입력 ${Math.round(P.usage.in / P.usage.n / 1000)}천 · 출력 ${Math.round(P.usage.out / P.usage.n / 1000)}천). 정확한 금액은 Claude 콘솔 Usage에서 확인하세요.</p>` : ''}
-          <div class="jlist">${P.list.map(j => `<div class="job" data-jid="${esc(j.e.id)}"><span><b>${esc(j.e.s)}</b> ${j.e.y} · ${j.e.g}학년 ${j.e.t}학기 ${esc(j.e.x)}${j.kind === 'fill' ? ' <small>그림 채우기</small>' : ''}</span><span class="dl">${esc(j.msg || '')}</span><span class="jst ${j.st}">${{ done: j.kind === 'fill' ? '그림 완료' : '검수 전', run: '읽는 중', fail: '다시 필요', wait: '대기' }[j.st]}</span></div>`).join('')}</div>`
+          <div class="jlist">${P.list.map(j => `<div class="job" data-jid="${esc(j.e.id)}"><span><b>${esc(j.e.s)}</b> ${j.e.y} · ${j.e.g}학년 ${j.e.t}학기 ${esc(j.e.x)}${j.kind === 'fill' ? ' <small>그림 채우기</small>' : j.kind === 'snap' ? ' <small>영역 다시 잡기</small>' : ''}</span><span class="dl">${esc(j.msg || '')}</span><span class="jst ${j.st}">${{ done: j.kind === 'fill' ? '그림 완료' : j.kind === 'snap' ? '다시 잡음' : '검수 전', run: j.kind === 'snap' ? '찾는 중' : '읽는 중', fail: '다시 필요', wait: '대기' }[j.st]}</span></div>`).join('')}</div>`
           : '<div class="empty">왼쪽에서 연도·학교를 고르고 ‘먼저 3건 시험해 보기’를 누르면 여기에 진행 상황이 나옵니다. 3건을 먼저 돌려 시간·사용량을 보고 모델을 정하세요.</div>'}
         </section></div>`;
     bindPre();
@@ -600,7 +666,7 @@ window.SudoRegister = function (H) {
         for (let k = 0; k < segs.length; k++) { const p = segs.slice(k).join('/'); if (keys.has(p)) { map.set(p, f); break; } }
       });
       if (!map.size) { toast('보관함 시험과 맞는 파일을 찾지 못했습니다. ‘B. 학교별 기출문제’ 폴더를 골라 주세요'); return; }
-      P.map = map; P.nFiles = map.size; toast(`파일 ${map.size}개를 찾았습니다`); render();
+      P.map = map; P.nFiles = map.size; P.fromMb = false; toast(`파일 ${map.size}개를 찾았습니다`); render();
     };
     $$('[data-py]').forEach(b => b.onclick = () => { const y = +b.dataset.py; P.years = P.years.includes(y) ? P.years.filter(x => x !== y) : P.years.concat(y); render(); });
     $$('[data-pg]').forEach(b => b.onclick = () => { const g = b.dataset.pg; P.groups = P.groups.includes(g) ? P.groups.filter(x => x !== g) : P.groups.concat(g); render(); });
@@ -612,8 +678,39 @@ window.SudoRegister = function (H) {
     const t = $('#preTry'); if (t) t.onclick = () => go(preCands().slice(0, 3), 'an');
     const al = $('#preAll'); if (al) al.onclick = () => { const c = preCands(); if (confirm(`${c.length}건을 차례로 읽습니다. 예상 ${fmtDur(c.length * 100 / P.conc)} 안팎이고, 그동안 이 창을 열어 두어야 합니다. 시작할까요?`)) go(c, 'an'); };
     const fl = $('#preFill'); if (fl) fl.onclick = () => go(fillCands(), 'fill');
+    const ps = $('#preSnap'); if (ps) ps.onclick = () => { if (!P.running) runSnap(snapCands().map(e => ({ e, st: 'wait', msg: '', kind: 'snap' }))); };
     const sp = $('#preStop'); if (sp) sp.onclick = () => { P.stop = true; sp.disabled = true; sp.textContent = '지금 읽는 것까지만 하고 멈춥니다'; };
     const rt = $('#preRetry'); if (rt) rt.onclick = () => runPre(P.list.filter(j => j.st === 'fail').map(j => Object.assign(j, { st: 'wait', msg: '', final: false })), true);
+  }
+  // 번호 기준으로 다시 잡기 (AI 없이, 이 컴퓨터에서만)
+  async function runSnap(list) {
+    P.list = list; P.running = true; P.stop = false; render();
+    for (const j of list) {
+      if (P.stop) break;
+      j.st = 'run'; j.msg = '쪽 여는 중'; prePaint();
+      try {
+        const files = filesFor(j.e); if (!files) throw new Error('파일을 찾지 못함');
+        const pages = await window.SudoPages.load(files.slice(0, 1), { maxPages: 16, noB64: true });
+        j.msg = `${pages.length}쪽에서 번호 찾는 중`; prePaint();
+        await new Promise(r => setTimeout(r, 20));
+        const rows = j.e.an.items.map(i => ({ no: i[0], essay: i[9], pg: i[15] || 0, box: i[16] || null, boxSrc: LOCATED.includes(i[17]) ? i[17] : '', ik: i[13] || '' }));
+        const keep = rows.filter(r => r.boxSrc === 'manual' || r.boxSrc === 'pin');
+        rows.forEach(r => { if (r.boxSrc === 'text' || r.boxSrc === 'num') r.boxSrc = ''; });
+        const hit = window.SudoPages.snap(rows, pages, 0);
+        const imgs = cropRows(rows.filter(r => r.boxSrc === 'text' || r.boxSrc === 'num'), pages, j.e.id);
+        const analysis = docFromAn(j.e.an);
+        analysis.items.forEach((it, k) => { const r = rows[k]; if (keep.includes(r)) return; Object.assign(it, { pg: r.pg, box: r.box, bs: r.boxSrc || '', ik: r.ik || it.ik }); });
+        analysis.source = Object.assign({}, analysis.source || {}, { resnapAt: now() });
+        if (ctx) await ctx.saveAnalysis({ id: j.e.id, analysis, imgs });
+        H.applySaved({ id: j.e.id, analysis });
+        j.final = true; j.st = 'done'; j.msg = `${rows.length}문항 중 ${hit + keep.length}개 번호로 맞춤`;
+      } catch (e) { j.final = true; j.st = 'fail'; j.msg = String(e.message || e).slice(0, 60); }
+      prePaint();
+    }
+    P.running = false;
+    const done = list.filter(j => j.st === 'done').length;
+    toast(`${done}건의 문항 영역을 다시 잡았습니다. 못 찾은 문항은 검수 화면의 ‘번호 찍기’로 채울 수 있습니다`);
+    render();
   }
   const prePaint = () => { if ((location.hash || '').startsWith('#register') && !R.draft && R.tab === 'pre') render(); };
   async function runPre(list, keep) {
@@ -646,7 +743,7 @@ window.SudoRegister = function (H) {
             analysis = docFromAn(j.e.an);
             const byNo = Object.fromEntries(rows.map(r => [r.no, r]));
             let hit = 0;
-            analysis.items.forEach(it => { const r = byNo[it.no]; if (r) { hit++; Object.assign(it, { q: r.q, pg: r.pg, box: r.box, ik: r.ik }); } });
+            analysis.items.forEach(it => { const r = byNo[it.no]; if (r) { hit++; Object.assign(it, { q: r.q, pg: r.pg, box: r.box, ik: r.ik, bs: r.boxSrc || '' }); } });
             Object.keys(imgs).forEach(k => { if (!analysis.items.some(it => it.ik === k)) delete imgs[k]; });
             analysis.source = Object.assign({}, analysis.source || {}, { imgFill: { model: settings.model, at: now(), usage } });
             j.final = true; j.msg = `${hit}문항 그림`;
@@ -656,7 +753,7 @@ window.SudoRegister = function (H) {
             analysis = {
               level: suggestLevel(rows), cuts: {}, essay: rows.filter(r => r.essay).length, status: 'ai',
               items: rows.map(r => ({ no: +r.no, pts: r.pts === '' ? 0 : +r.pts, diff: DIFF[r.diff] || '', beh: BEH[r.beh] || '', course, big: r.big || '', mid: r.mid || '', type: r.type || '', code: r.code || '', essay: !!r.essay,
-                ans: r.ans || '', sol: r.sol || '', q: r.q || '', ik: r.ik || '', conf: Math.round(r.conf * 100) / 100, pg: r.pg || 0, box: r.box || null })),
+                ans: r.ans || '', sol: r.sol || '', q: r.q || '', ik: r.ik || '', conf: Math.round(r.conf * 100) / 100, pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '' })),
               source: { kind: 'ai', provider: settings.provider, model: settings.model, at: now(), usage, secs, withAns, batch: true, files: files.map(f => f.name), warnings }, savedAt: now()
             };
             j.final = true; j.msg = `${rows.length}문항 · 확인 ${rows.filter(r => !r.ok).length}개 · ${secs}초`;
