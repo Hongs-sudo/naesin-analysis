@@ -167,9 +167,10 @@ window.SudoAI = (function () {
   async function rankSimilar({ settings, getToken, target, cands, n }) {
     const text = [
       '기준 문항은 학교 시험 문제이고, 후보는 학원이 내신대비 때 학생들과 함께 푼 자료의 문제입니다. 기준 문항과 가장 비슷한 후보를 고르세요.',
-      '비슷함 = 같은 개념·같은 풀이 흐름·같은 조건 구조. 숫자만 다른 문제가 가장 비슷합니다. why에는 어떤 부분이 비슷한지, concept에는 풀이에 필요한 핵심 개념을 학부모님이 읽기 쉬운 말로 적습니다.',
-      `기준: [${target.type}] [${target.diff}] ${target.q}`, '', '후보 (id | 유형 | 난이도 | 내용):',
-      ...cands.map(c => `${c.id} | ${c.type} | ${c.diff} | ${c.q}`), '',
+      '비슷함 = 같은 그림·도형 모양, 같은 문제 상황, 같은 조건 구조, 같은 풀이 흐름, 같은 것을 묻는 문제. 숫자만 다른 문제가 가장 비슷합니다. 난이도는 따지지 않습니다 (쉬운 문제와 어려운 문제를 똑같이 봅니다). score는 문제와 그림이 얼마나 닮았는지만으로 매깁니다.',
+      'why에는 어떤 부분(그림·조건·묻는 것)이 비슷한지, concept에는 풀이에 필요한 핵심 개념을 학부모님이 읽기 쉬운 말로 적습니다.',
+      `기준: [${target.type}] ${target.q}`, '', '후보 (id | 유형 | 내용):',
+      ...cands.map(c => `${c.id} | ${c.type} | ${c.q}`), '',
       `가장 비슷한 순서로 최대 ${n || 3}개를 save_picks 로 돌려주세요.`
     ].join('\n');
     const s = Object.assign({}, settings, { model: FAST[settings.provider] || settings.model });
