@@ -39,6 +39,11 @@ window.SudoLibrary = function (H) {
 
   // ---------- 화면 ----------
   function render() {
+    const fl0 = document.querySelector('#main .flist'), keep = fl0 ? fl0.scrollTop : 0, keepTab = L.tab;
+    renderInner();
+    const fl1 = document.querySelector('#main .flist'); if (fl1 && keep && keepTab === L.tab) fl1.scrollTop = keep;
+  }
+  function renderInner() {
     const all = mats(), nProb = all.reduce((s, m) => s + (m.problems || []).filter(p => !p.skip).length, 0);
     const nExamQ = D.exams.filter(e => e.an).reduce((s, e) => s + e.an.items.filter(i => i[12]).length, 0);
     const list = all.filter(m => (m.src || 'custom') === L.tab && (L.course === '전체' || m.course === L.course)).sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''));
@@ -202,7 +207,14 @@ window.SudoLibrary = function (H) {
       render();
     };
     const mbc = $('#libMb'); if (mbc) mbc.onclick = () => { const mb = window.__mybox; if (mb) mb.scan(true); };
-    $$('[data-fon]').forEach(c => c.onchange = () => { L.found[L.tab][+c.dataset.fon].on = c.checked; render(); });
+    // 체크할 때 화면을 다시 그리지 않고 개수·버튼만 고침 (목록 스크롤 위치가 그대로 남도록)
+    const syncFound = () => {
+      const list = L.found[L.tab] || [], on = list.filter(f => f.on).length;
+      const fa = $('#fAll'); if (fa) { fa.checked = on > 0 && on === list.length; fa.indeterminate = on > 0 && on < list.length; }
+      const sm = document.querySelector('.allchk small'); if (sm) sm.textContent = `${on}/${list.length}개 선택`;
+      const lr = $('#libRun'); if (lr) { lr.textContent = `선택한 ${on}개 색인 시작`; lr.disabled = !(on && !L.running && aiReady()); }
+    };
+    $$('[data-fon]').forEach(c => c.onchange = () => { L.found[L.tab][+c.dataset.fon].on = c.checked; syncFound(); });
     $$('[data-fco]').forEach(c => c.onchange = () => { L.found[L.tab][+c.dataset.fco].course = c.value; });
     $$('[data-fsc]').forEach(c => c.onchange = () => { L.found[L.tab][+c.dataset.fsc].school = c.value; });
     $$('[data-fcm]').forEach(c => c.onchange = () => { L.found[L.tab][+c.dataset.fcm].commercial = c.checked; });
@@ -222,7 +234,7 @@ window.SudoLibrary = function (H) {
     const fa = $('#fAll'); if (fa) {
       const list = L.found[L.tab], on = list.filter(f => f.on).length;
       fa.indeterminate = on > 0 && on < list.length;
-      fa.onchange = () => { list.forEach(f => { f.on = fa.checked; }); render(); };
+      fa.onchange = () => { list.forEach(f => { f.on = fa.checked; }); $$('[data-fon]').forEach(c => { c.checked = fa.checked; }); syncFound(); };
     }
     const ls = $('#libStop'); if (ls) ls.onclick = () => {
       L.stop = true;
