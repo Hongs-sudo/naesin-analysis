@@ -34,9 +34,9 @@ window.SudoPages = (function () {
           const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
           const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
           await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-          let layout = null;
-          try { layout = await textLayout(pg, vp); } catch (_) { layout = null; }
-          out.push({ canvas: c, w: c.width, h: c.height, file: f.name, page: i, b64: (opt && opt.noB64) ? '' : toB64(c), layout });
+          let layout = null, fives = null;
+          try { layout = await textLayout(pg, vp); fives = layout ? layout.fives : null; if (layout && !layout.length) layout = null; } catch (_) { layout = null; }
+          out.push({ canvas: c, w: c.width, h: c.height, file: f.name, page: i, b64: (opt && opt.noB64) ? '' : toB64(c), layout, fives });
         }
       } else if (isImg(f)) {
         const url = URL.createObjectURL(f);
@@ -161,8 +161,11 @@ window.SudoPages = (function () {
       // 왼쪽 여백에 빽빽한 글자가 있으면 번호 줄이 아님 (연필 동그라미처럼 성긴 자국은 괜찮음)
       let ls = 0; const lw = Math.max(1, a0); for (let x = 0; x < a0; x++) ls += l.cnt[x];
       if (a0 > 4 && ls > 0.08 * lw * l.h) return;
+      // 보기 줄(① 40° ② 45° …)일 가능성: 줄 맨 앞이 숫자 든 동그라미 (학생이 번호에 친 동그라미일 수도 있어 빼지는 않고 짝짓기에서 불리하게)
+      let choice = false;
+      try { choice = circles(pg, l.x - 3, l.t - 3, l.x + c.lh * 1.5, l.b + 3, c.lh).some(k => k.x <= l.x + c.lh * 0.5); } catch (_) { choice = false; }
       const prev = c.lines[k - 1];
-      out.push({ c: ci, x: Math.max(l.x, c.L - c.lh * 0.3), top: l.t, h: l.h, gap: prev ? l.t - prev.b : 999 });
+      out.push({ c: ci, x: Math.max(l.x, c.L - c.lh * 0.3), top: l.t, h: l.h, gap: prev ? l.t - prev.b : 999, choice });
     }));
     return out;
   }
@@ -201,11 +204,87 @@ window.SudoPages = (function () {
       m = s.match(/^\[?\s*(서\s*술\s*형|서\s*답\s*형|서\s*논\s*술\s*형|논\s*술\s*형)\s*\[?(\d{1,2})/);
       if (m) out.push({ e: +m[2], x: w.x, top: w.top, h: w.h });
     });
-    return out.length ? out : null;
+    // 보기 ⑤ 자리 (객관식 문항 영역의 끝)
+    out.fives = items.filter(it => it.s.includes('⑤')).map(it => ({ x: it.x, y: it.b, h: it.h }));
+    return out.length || out.fives.length ? out : null;
+  }
+  // 스캔본에서 보기 ①~⑤ 찾기: 가운데에 숫자가 든 동그라미(글줄 높이쯤)
+  function circles(pg, x0, y0, x1, y1, lh) {
+    x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0)); x1 = Math.min(pg.w, Math.round(x1)); y1 = Math.min(pg.h, Math.round(y1));
+    const w = x1 - x0, h = y1 - y0; if (w < 5 || h < 5) return [];
+    const d = pg.canvas.getContext('2d').getImageData(x0, y0, w, h).data, ink = new Uint8Array(w * h);
+    for (let i = 0, p = 0; p < w * h; i += 4, p++) { const r = d[i], g = d[i + 1], bb = d[i + 2]; const v = (r * 77 + g * 151 + bb * 28) >> 8; if (v < 150 && !(r - g > 45 && r - bb > 45) && !(bb - r > 40 && bb - g > 15)) ink[p] = 1; }
+    // 흐린 인쇄로 끊긴 동그라미를 잇도록 1px 두껍게 한 그림에서 덩어리를 찾음
+    const raw = ink; const thick = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const p = y * w + x; if (raw[p] || (x > 0 && raw[p - 1]) || (x < w - 1 && raw[p + 1]) || (y > 0 && raw[p - w]) || (y < h - 1 && raw[p + w])) thick[p] = 1; }
+    const seen = new Uint8Array(w * h), out = [], st = [];
+    for (let p = 0; p < w * h; p++) {
+      if (!thick[p] || seen[p]) continue;
+      let mnx = 1e9, mny = 1e9, mxx = -1, mxy = -1, n = 0; st.length = 0; st.push(p); seen[p] = 1;
+      while (st.length) {
+        const q = st.pop(), qx = q % w, qy = (q / w) | 0; n++;
+        if (qx < mnx) mnx = qx; if (qx > mxx) mxx = qx; if (qy < mny) mny = qy; if (qy > mxy) mxy = qy;
+        if (qx > 0 && thick[q - 1] && !seen[q - 1]) { seen[q - 1] = 1; st.push(q - 1); }
+        if (qx < w - 1 && thick[q + 1] && !seen[q + 1]) { seen[q + 1] = 1; st.push(q + 1); }
+        if (qy > 0 && thick[q - w] && !seen[q - w]) { seen[q - w] = 1; st.push(q - w); }
+        if (qy < h - 1 && thick[q + w] && !seen[q + w]) { seen[q + w] = 1; st.push(q + w); }
+      }
+      const bw = mxx - mnx + 1, bh = mxy - mny + 1;
+      if (bw < lh * 0.6 || bw > lh * 1.3 || bh < lh * 0.6 || bh > lh * 1.3 || Math.abs(bw - bh) > Math.max(3, bw * 0.22) || n / (bw * bh) > 0.6) continue;
+      const cx = mnx + bw / 2, cy = mny + bh / 2, rx = bw / 2 - 1.5, ry = bh / 2 - 1.5; let on = 0;
+      for (let k = 0; k < 24; k++) {
+        const t = k / 24 * Math.PI * 2; let hit = 0;
+        for (const dr of [-1.5, 0, 1.5]) { const xx = Math.round(cx + (rx + dr) * Math.cos(t)), yy = Math.round(cy + (ry + dr) * Math.sin(t)); if (xx >= 0 && yy >= 0 && xx < w && yy < h && thick[yy * w + xx]) hit = 1; }
+        on += hit;
+      }
+      if (on < 16) continue;
+      // 고리와 가운데 숫자 사이는 비어 있어야 함 (한글 글자는 이 사이가 차 있음)
+      let mid = 0;
+      for (let k = 0; k < 24; k++) { const t = k / 24 * Math.PI * 2, xx = Math.round(cx + rx * 0.66 * Math.cos(t)), yy = Math.round(cy + ry * 0.66 * Math.sin(t)); if (xx >= 0 && yy >= 0 && xx < w && yy < h && raw[yy * w + xx]) mid++; }
+      if (mid > 8) continue;
+      // 동그라미는 네 귀퉁이가 비어 있음 (B·D·□ 같은 글자는 귀퉁이가 참)
+      let corner = 0;
+      for (const [fx, fy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        let hit = 0; const bx = fx ? mxx - 2 : mnx, by = fy ? mxy - 2 : mny;
+        for (let yy = by; yy < by + 3; yy++) for (let xx = bx; xx < bx + 3; xx++) if (raw[yy * w + xx]) hit = 1;
+        corner += hit;
+      }
+      if (corner >= 2) continue;
+      let inner = 0;   // 가운데에 숫자 (한글 'ㅇ'·기호 '○'는 비어 있음)
+      for (let yy = Math.round(cy - bh * 0.22); yy <= Math.round(cy + bh * 0.22); yy++) for (let xx = Math.round(cx - bw * 0.18); xx <= Math.round(cx + bw * 0.18); xx++) if (xx >= 0 && yy >= 0 && xx < w && yy < h && raw[yy * w + xx]) inner++;
+      if (inner < 3) continue;
+      out.push({ x: x0 + mnx, y: y0 + mny, r: x0 + mxx, b: y0 + mxy });
+    }
+    return out;
+  }
+  // 보기 묶음 = 가로 한 줄 또는 세로 한 줄로 고르게 3개 이상 나란한 동그라미. 가장 아래 묶음의 마지막이 ⑤ (세로로 덜 찾았으면 간격만큼 더)
+  // starts(c): 이 동그라미가 그 글줄의 맨 앞 글자인지 (보기 ①은 늘 줄 맨 앞에 있음 → 글자 속 'ㅇ' 같은 것과 구별)
+  // left: 단의 왼쪽 글자 끝 (세로로 늘어선 보기는 늘 단 왼쪽에 있음)
+  function lastChoice(cs, lh, starts, left) {
+    if (cs.length < 3) return null;
+    const groups = [], st = starts || (() => true);
+    // 간격이 고른지: 가장 짧은 간격의 정수배 (보기 하나를 못 찾아 두 칸이 된 경우도 허용)
+    const even = gaps => { const g0 = Math.min(...gaps); return g0 > 0 && gaps.every(g => { const r = g / g0; return r < 3.3 && Math.abs(r - Math.round(r)) < 0.25; }); };
+    cs.forEach(a => {
+      const row = cs.filter(c => Math.abs((c.y + c.b) / 2 - (a.y + a.b) / 2) < lh * 0.4).sort((p, q) => p.x - q.x);
+      if (row.length >= 3 && st(row[0])) { const gaps = row.slice(1).map((c, i) => c.x - row[i].x); if (Math.min(...gaps) > lh * 2 && even(gaps)) groups.push({ kind: 'row', m: row }); }
+      const col = cs.filter(c => Math.abs(c.x - a.x) < lh * 0.5).sort((p, q) => p.y - q.y);
+      if (col.length >= 3 && (left === undefined || Math.abs(col[0].x - left) < lh * 3)) { const gaps = col.slice(1).map((c, i) => c.y - col[i].y); if (Math.max(...gaps) < lh * 3.6 && Math.min(...gaps) > lh * 0.9 && even(gaps)) groups.push({ kind: 'col', m: col }); }
+    });
+    if (!groups.length) return null;
+    const bot = g => Math.max(...g.m.map(c => c.b));
+    groups.sort((p, q) => bot(q) - bot(p));
+    const g = groups[0];
+    if (g.kind === 'row') return g.m[g.m.length - 1];
+    const last = g.m[g.m.length - 1];
+    if (g.m.length < 5) { const sp = (last.y - g.m[0].y) / (g.m.length - 1); return { b: last.b + sp * (5 - g.m.length), r: last.r }; }
+    return last;
   }
   // 한 쪽의 번호 위치들 → 상자 [x0,y0,x1,y1] (0~1000). stops: 상자가 넘지 말아야 할 다른 문항의 시작 [{c, top}]
+  // 끝: 객관식은 보기 ⑤ 줄의 오른쪽 아래 (직접 찍은 끝 → PDF의 ⑤ 글자 → 스캔의 ①~⑤ 동그라미 → AI가 짐작한 끝),
+  //     못 찾거나 서답형이면 같은 단 다음 번호 바로 위 (아래 빈 공간은 잘라 냄). res.ends[k]에 끝을 찾은 방법
   function boxesFor(pg, anchors, stops) {
-    const G = geom(pg), W = G.W, H = G.H, res = [];
+    const G = geom(pg), W = G.W, H = G.H, res = []; res.ends = [];
     const colOf = a => G.cols.length > 1 && a.x >= (G.div > 0 ? G.div : W / 2) ? 1 : 0;
     anchors.forEach(a => { a.c = a.c === undefined ? colOf(a) : a.c; });
     const walls = anchors.concat(stops || []);
@@ -215,10 +294,36 @@ window.SudoPages = (function () {
       const nx = walls.filter(o => o !== a && o.c === a.c && o.top > a.top + c.lh * 0.5).sort((p, q) => p.top - q.top)[0];
       const limit = nx ? nx.top - pad * 0.6 : G.bot;
       const inside = c.lines.filter(l => l.t >= a.top - 2 && l.b <= limit + 2);
-      const last = inside.length ? Math.max(...inside.map(l => l.b)) : a.top + c.lh;
-      const x0 = Math.max(0, Math.min(a.x, c.L) - pad * 1.4), x1 = Math.min(W, c.x1 + (G.cols.length > 1 ? 0 : pad));
-      const y0 = Math.max(0, a.top - pad), y1 = Math.min(H, Math.min(limit, last + pad * 1.4));
+      let end = null, how = '';
+      if (a.endPx) { end = Math.min(limit, a.endPx[1]); how = 'pin'; }
+      else if (!a.essay) {
+        const f = (pg.fives || []).filter(m => m.x >= c.x0 - 5 && m.x <= c.x1 + 5 && m.y > a.top + c.lh * 0.5 && m.y <= limit + 5);
+        if (f.length) { end = f[f.length - 1].y + f[f.length - 1].h * 0.25; how = 'five'; }
+        else {
+          const starts = k => { const cy = (k.y + k.b) / 2, ln = c.lines.find(l => l.t - 2 <= cy && l.b + 2 >= cy); return !!ln && Math.abs(k.x - ln.x) <= c.lh * 0.6; };
+          let lc = null; try { lc = lastChoice(circles(pg, c.x0, a.top + c.lh, c.x1, limit + 2, c.lh), c.lh, starts, c.L); } catch (_) { lc = null; }
+          if (lc && lc.b <= limit + 2) { end = lc.b; how = 'circle'; }
+          else if (a.hy && a.hy > a.top + c.lh * 2 && a.hy < limit + c.lh) {
+            const ln = inside.filter(l => Math.abs(l.b - a.hy) < c.lh * 1.5).sort((p, q) => Math.abs(p.b - a.hy) - Math.abs(q.b - a.hy))[0];
+            if (ln) { end = ln.b; how = 'hint'; }
+          }
+        }
+        if (end !== null && how !== 'pin') { const ln = inside.find(l => l.t <= end && l.b >= end - c.lh * 0.6); if (ln && ln.b < end + c.lh) end = Math.max(end, ln.b); }
+      }
+      const x0 = Math.max(0, Math.min(a.x, c.L) - pad * 1.4);
+      let x1 = Math.min(W, c.x1 + (G.cols.length > 1 ? 0 : pad)), y1;
+      if (end !== null) {
+        const used = inside.filter(l => l.t < end && l.b <= end + c.lh * 0.5);
+        const r = Math.max(a.endPx ? a.endPx[0] : 0, ...used.map(l => l.r));
+        if (r > x0) x1 = Math.min(x1, r + pad * 1.4);
+        y1 = Math.min(H, Math.min(limit, end + pad));
+      } else {
+        const last = inside.length ? Math.max(...inside.map(l => l.b)) : a.top + c.lh;
+        y1 = Math.min(H, Math.min(limit, last + pad * 1.4));
+      }
+      const y0 = Math.max(0, a.top - pad);
       res.push(y1 - y0 < H * 0.015 ? null : [x0 / W * 1000, y0 / H * 1000, x1 / W * 1000, y1 / H * 1000].map(v => Math.round(Math.max(0, Math.min(1000, v)))));
+      res.ends.push(how);
     });
     return res;
   }
@@ -231,8 +336,8 @@ window.SudoPages = (function () {
   // AI가 읽은 문항(no, pg, box)을 번호 위치에 맞춤. pages = load() 결과 (pgBase: 이 묶음의 첫 쪽 번호 - 1)
   // ① PDF 글자로 읽은 번호가 있으면 번호끼리 바로 짝 ② 없으면 그림 후보와 AI 위치를 순서대로 짝
   // 결과: 맞춘 문항 수. 맞춘 문항은 boxSrc 'text'(PDF 글자) 또는 'num'(그림의 번호 줄), 못 맞춘 문항은 AI 상자 그대로(boxSrc 없음)
-  function snap(list, pages, pgBase) {
-    pgBase = pgBase || 0;
+  function snap(list, pages, pgBase, opt) {
+    pgBase = pgBase || 0; const aiEnds = !!(opt && opt.aiEnds);
     const rows = list.filter(it => it && numOf(it) && it.boxSrc !== 'manual' && it.boxSrc !== 'pin');
     if (!rows.length || !pages.length) return 0;
     const pageOf = n => pages[n - pgBase - 1];
@@ -272,6 +377,7 @@ window.SudoPages = (function () {
           v += Math.abs(it.box[1] / 1000 - c.fy) * 3;
         } else v += 0.3;
         if (c.gap < c.h * 0.9) v += 0.2; // 바로 윗줄과 붙어 있으면 번호 줄일 가능성이 낮음
+        if (c.choice) v += 0.3;
         return v;
       };
       const I = items.length, C = imgC.length, SKIP = 1.0;
@@ -294,9 +400,11 @@ window.SudoPages = (function () {
       const pgNo = arr[0][1].pg;
       const stops = list.filter(it => it && !pair.has(it) && it.pg === pgNo && Array.isArray(it.box) && it.box.length === 4)
         .map(it => ({ c: hintCol(it, page), top: it.box[1] / 1000 * page.h + (it.boxSrc === 'manual' ? 0 : page.h * 0.01) }));
-      const anchors = arr.map(([, c]) => ({ x: c.x, top: c.top, c: c.c }));
+      const anchors = arr.map(([it, c]) => ({ x: c.x, top: c.top, c: c.c, essay: !!it.essay,
+        hy: aiEnds && Array.isArray(it.box) && it.box.length === 4 && it.pg === c.pg ? it.box[3] / 1000 * page.h : null,
+        endPx: Array.isArray(it.end) && it.endPg === c.pg ? [it.end[0] / 1000 * page.w, it.end[1] / 1000 * page.h] : null }));
       const boxes = boxesFor(page, anchors, stops);
-      arr.forEach(([it, c], k) => { if (!boxes[k]) return; it.pg = c.pg; it.box = boxes[k]; it.boxSrc = c.src; it.an = [Math.round(c.x / page.w * 1000), Math.round(c.top / page.h * 1000)]; hit++; });
+      arr.forEach(([it, c], k) => { if (!boxes[k]) return; it.pg = c.pg; it.box = boxes[k]; it.boxSrc = c.src; it.an = [Math.round(c.x / page.w * 1000), Math.round(c.top / page.h * 1000)]; it.be = boxes.ends[k] ? 1 : 0; hit++; });
     });
     rows.forEach(it => { delete it._e; });
     return hit;
@@ -307,48 +415,61 @@ window.SudoPages = (function () {
     (pgNos || [...new Set(list.filter(it => it && it.boxSrc === 'pin').map(it => it.pg))]).forEach(pgNo => {
       const page = pages[pgNo - pgBase - 1]; if (!page) return;
       const rows = list.filter(it => it && it.pg === pgNo && ['text', 'num', 'pin'].includes(it.boxSrc) && Array.isArray(it.an || it.box));
-      const anchors = rows.map(it => { const a = it.an || [it.box[0] + 8, it.box[1] + 6]; return { x: a[0] / 1000 * page.w, top: a[1] / 1000 * page.h }; });
+      const anchors = rows.map(it => { const a = it.an || [it.box[0] + 8, it.box[1] + 6]; return { x: a[0] / 1000 * page.w, top: a[1] / 1000 * page.h, essay: !!it.essay,
+        endPx: Array.isArray(it.end) && it.endPg === pgNo ? [it.end[0] / 1000 * page.w, it.end[1] / 1000 * page.h] : null }; });
       const stops = list.filter(it => it && it.pg === pgNo && it.boxSrc === 'manual' && Array.isArray(it.box)).map(it => ({ c: hintCol(it, page), top: it.box[1] / 1000 * page.h }));
       try { geom(page); } catch (_) { return; }
       const boxes = boxesFor(page, anchors, stops);
-      rows.forEach((it, k) => { if (boxes[k]) { it.box = boxes[k]; n++; } });
+      rows.forEach((it, k) => { if (boxes[k]) { it.box = boxes[k]; it.be = boxes.ends[k] ? 1 : 0; n++; } });
     });
     return n;
   }
-  // 번호 찍기: 빠진 번호를 차례로 보여 주고, 쪽 그림에서 그 번호를 누르면 위치를 기록
-  // queue: [{label, pg}], marks: [{pg, an:[x,y], label}] (이미 찾은 번호). 결과: Promise<[{k, pg, an:[x,y]}]> (취소하면 null)
+  // 번호 찍기: 빠진 문항마다 ① 번호 숫자의 왼쪽 위 → ② 보기 ⑤ 줄의 오른쪽 아래(서답형은 ①만)를 차례로 누름
+  // queue: [{label, pg, essay}], marks: [{pg, an:[x,y], label}] (이미 찾은 번호). 결과: Promise<[{k, pg, an:[x,y], end:[x,y]|null, endPg}]> (취소하면 null)
   function pickNumbers(pages, queue, marks) {
     return new Promise(resolve => {
-      let k = 0, cur = Math.min(Math.max(1, (queue[0] && queue[0].pg) || 1), pages.length);
+      let k = 0, step = 'num', cur = Math.min(Math.max(1, (queue[0] && queue[0].pg) || 1), pages.length);
       const got = [], all = (marks || []).slice();
       const wrap = document.createElement('div');
       wrap.className = 'boxpick';
       wrap.innerHTML = `<div class="bp-in" role="dialog" aria-modal="true" aria-label="번호 찍기"><div class="bp-head"><b data-msg></b>
         <span class="bp-nav">${pages.length > 1 ? '<button type="button" class="btn ghost sm" data-prev aria-label="이전 쪽">‹</button><span data-pgl></span><button type="button" class="btn ghost sm" data-next aria-label="다음 쪽">›</button>' : ''}</span>
-        <span><button type="button" class="btn ghost sm" data-skip>이 번호 건너뛰기</button> <button type="button" class="btn ghost sm" data-x>취소</button> <button type="button" class="btn sm" data-ok>끝내기</button></span></div>
+        <span><button type="button" class="btn ghost sm" data-skip></button> <button type="button" class="btn ghost sm" data-x>취소</button> <button type="button" class="btn sm" data-ok>끝내기</button></span></div>
         <div class="bp-stage pin"><img alt="쪽 그림"><div class="bp-marks"></div></div></div>`;
       document.body.appendChild(wrap);
-      const img = wrap.querySelector('img'), mk = wrap.querySelector('.bp-marks'), stage = wrap.querySelector('.bp-stage');
-      const msg = () => { const m = wrap.querySelector('[data-msg]'); m.innerHTML = k < queue.length ? `<span class="pinno">${String(queue[k].label).replace(/</g, '')}번</span> 문항 번호 숫자의 왼쪽 위를 누르세요 <small>${k + 1} / ${queue.length}</small>` : '모두 찍었습니다. ‘끝내기’를 누르세요'; };
+      const img = wrap.querySelector('img'), mk = wrap.querySelector('.bp-marks'), stage = wrap.querySelector('.bp-stage'), skip = wrap.querySelector('[data-skip]');
+      const lab = () => String(queue[k].label).replace(/</g, '');
+      const msg = () => {
+        const m = wrap.querySelector('[data-msg]');
+        if (k >= queue.length) { m.textContent = '모두 찍었습니다. ‘끝내기’를 누르세요'; skip.hidden = true; return; }
+        skip.hidden = false;
+        if (step === 'num') { m.innerHTML = `<span class="pinno">${lab()}번</span> ① 문항 번호 숫자의 <b>왼쪽 위</b>를 누르세요 <small>${k + 1} / ${queue.length}</small>`; skip.textContent = '이 번호 건너뛰기'; }
+        else { m.innerHTML = `<span class="pinno">${lab()}번</span> ② 보기 <b>⑤가 있는 줄의 오른쪽 아래</b>를 누르세요 <small>${k + 1} / ${queue.length}</small>`; skip.textContent = '끝은 자동으로'; }
+      };
       const show = () => {
         img.src = pages[cur - 1].canvas.toDataURL('image/jpeg', 0.75);
         const l = wrap.querySelector('[data-pgl]'); if (l) l.textContent = `${cur} / ${pages.length}쪽`;
-        mk.innerHTML = all.filter(o => o.pg === cur).map(o => `<i class="${o.mine ? 'mine' : ''}" style="left:${o.an[0] / 10}%;top:${o.an[1] / 10}%"><span>${String(o.label).replace(/</g, '')}</span></i>`).join('');
+        mk.innerHTML = all.filter(o => o.pg === cur).map(o => `<i class="${o.mine ? 'mine' : ''} ${o.end ? 'end' : ''}" style="left:${o.an[0] / 10}%;top:${o.an[1] / 10}%"><span>${String(o.label).replace(/</g, '')}</span></i>`).join('');
         msg();
       };
-      const next = () => { k++; if (k < queue.length && queue[k].pg && queue[k].pg !== cur && queue[k].pg <= pages.length) cur = queue[k].pg; show(); };
+      const next = () => { step = 'num'; k++; if (k < queue.length && queue[k].pg && queue[k].pg !== cur && queue[k].pg <= pages.length) cur = queue[k].pg; show(); };
       stage.addEventListener('click', ev => {
         if (k >= queue.length) return;
         const r = img.getBoundingClientRect();
-        const an = [Math.round(Math.max(0, Math.min(1000, (ev.clientX - r.left) / r.width * 1000))), Math.round(Math.max(0, Math.min(1000, (ev.clientY - r.top) / r.height * 1000)))];
-        got.push({ k, pg: cur, an }); all.push({ pg: cur, an, label: queue[k].label, mine: 1 });
-        next();
+        const p = [Math.round(Math.max(0, Math.min(1000, (ev.clientX - r.left) / r.width * 1000))), Math.round(Math.max(0, Math.min(1000, (ev.clientY - r.top) / r.height * 1000)))];
+        if (step === 'num') {
+          got.push({ k, pg: cur, an: p, end: null, endPg: null }); all.push({ pg: cur, an: p, label: queue[k].label, mine: 1 });
+          if (queue[k].essay) next(); else { step = 'end'; show(); }
+        } else {
+          const g = got[got.length - 1]; g.end = p; g.endPg = cur; all.push({ pg: cur, an: p, label: '⑤', mine: 1, end: 1 });
+          next();
+        }
       });
       const close = v => { wrap.remove(); resolve(v); };
       const pv = wrap.querySelector('[data-prev]'), nx = wrap.querySelector('[data-next]');
       if (pv) pv.onclick = () => { if (cur > 1) { cur--; show(); } };
       if (nx) nx.onclick = () => { if (cur < pages.length) { cur++; show(); } };
-      wrap.querySelector('[data-skip]').onclick = () => { if (k < queue.length) next(); };
+      skip.onclick = () => { if (k < queue.length) next(); };
       wrap.querySelector('[data-x]').onclick = () => close(null);
       wrap.querySelector('[data-ok]').onclick = () => close(got);
       wrap.addEventListener('keydown', ev => { if (ev.key === 'Escape') close(null); });

@@ -84,7 +84,7 @@ window.SudoRegister = function (H) {
     const rows = e.an.items.map(i => {
       const r = emptyRow(i[0]);
       Object.assign(r, { pts: i[1] || (ai ? '' : i[1]), diff: i[2], beh: i[3], essay: i[9], big: i[5], mid: i[6], type: i[7], code: i[8] >= 0 ? D.catalog[i[8]][0] : '', ans: i[10] || '', sol: i[11] || '',
-        q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, boxSrc: i[17] || '' });
+        q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, boxSrc: i[17] || '', be: i[18] || 0 });
       if (ai) r.ok = r.conf >= 0.7 && r.pts !== '' ? 1 : 0;
       return r;
     });
@@ -95,7 +95,7 @@ window.SudoRegister = function (H) {
   function docFromAn(an) {
     return { level: an.level || null, cuts: an.cuts || {}, essay: an.essay || 0, source: an.source || null, status: an.status || 'checked',
       items: an.items.map(i => ({ no: i[0], pts: i[1], diff: DIFF[i[2]] || '', beh: BEH[i[3]] || '', course: i[4], big: i[5], mid: i[6], type: i[7],
-        code: i[8] >= 0 ? D.catalog[i[8]][0] : '', essay: !!i[9], ans: i[10] || '', sol: i[11] || '', q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, bs: i[17] || '' })) };
+        code: i[8] >= 0 ? D.catalog[i[8]][0] : '', essay: !!i[9], ans: i[10] || '', sol: i[11] || '', q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, bs: i[17] || '', be: i[18] || 0 })) };
   }
   // 문항 영역 잘라 그림 만들기 → {key: dataURL}
   function cropRows(rows, pages, id) {
@@ -284,7 +284,7 @@ window.SudoRegister = function (H) {
       const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), withAns: R.withAns }, rowsFromAI(result, course));
       d.warnings = result.warnings || [];
       if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
-      const snapped = window.SudoPages.snap(d.rows, pages, 0);
+      const snapped = window.SudoPages.snap(d.rows, pages, 0, { aiEnds: true });
       const nMiss = d.rows.length - snapped;
       d.warnings.push(`문항 영역: ${d.rows.length}문항 중 ${snapped}개를 번호 위치로 맞췄습니다${nMiss > 0 ? ` · ${nMiss}개는 아래 ‘문항 위치’에서 번호 찍기로 채워 주세요` : ''}`);
       const imgs = cropRows(d.rows, pages, d.id);
@@ -347,11 +347,12 @@ window.SudoRegister = function (H) {
   function locCard(rows) {
     const list = rows.slice().sort((a, b) => (+a.essay || 0) - (+b.essay || 0) || a.no - b.no);
     const nOk = rows.filter(r => locOf(r) === 'ok').length, nHand = rows.filter(r => locOf(r) === 'hand').length, nMiss = rows.length - nOk - nHand;
+    const nNoEnd = rows.filter(r => locOf(r) !== 'miss' && r.boxSrc !== 'manual' && !r.essay && !r.be).length;
     return `<section class="card locbar" aria-label="문항 위치 확인"><div class="head"><h2>문항 위치 <small>${rows.length}문항 중 ${nOk}개 번호로 찾음${nHand ? ` · ${nHand}개 직접` : ''}${nMiss ? ` · <b class="goldt">${nMiss}개 못 찾음</b>` : ''}</small></h2>
       <div class="row2">${R.pages ? `<button type="button" class="btn ghost sm" id="rvSnap">번호 기준으로 다시 잡기</button><button type="button" class="btn sm" id="rvPin" ${nMiss ? '' : 'disabled'}>${nMiss ? `번호 찍기로 ${nMiss}개 채우기` : '모두 찾음'}</button>`
         : `${mbExamFile(R.draft.id, R.draft) ? '<button type="button" class="btn sm" id="rvMb">MYBOX에서 시험지 열기</button>' : ''}<label class="btn ghost sm" for="rvPages2">시험지 파일 열기 <small>번호 확인·찍기</small></label><input type="file" id="rvPages2" accept="${ACCEPT}" multiple hidden>`}</div></div>
-      <div class="locchips">${list.map(r => `<button type="button" class="${locOf(r) === 'ok' ? '' : locOf(r)}" data-loc="${rows.indexOf(r)}" title="${r.no}번 · ${{ text: 'PDF 글자로 번호 찾음', num: '그림에서 번호 찾음', pin: '번호 직접 찍음', manual: '영역 직접 고침' }[r.boxSrc] || 'AI 짐작 (번호를 못 찾음)'}">${r.essay ? '서' : ''}${r.no}</button>`).join('')}</div>
-      <div class="loclegend"><span><i></i>번호로 찾음</span><span><i class="hand"></i>직접 찍음·고침</span><span><i class="miss"></i>못 찾음 (AI 짐작) · 누르면 영역을 고칠 수 있습니다</span></div></section>`;
+      <div class="locchips">${list.map(r => { const noEnd = locOf(r) !== 'miss' && r.boxSrc !== 'manual' && !r.essay && !r.be; return `<button type="button" class="${locOf(r) === 'ok' ? '' : locOf(r)} ${noEnd ? 'noend' : ''}" data-loc="${rows.indexOf(r)}" title="${r.no}번 · ${{ text: 'PDF 글자로 번호 찾음', num: '그림에서 번호 찾음', pin: '번호 직접 찍음', manual: '영역 직접 고침' }[r.boxSrc] || 'AI 짐작 (번호를 못 찾음)'}${noEnd ? ' · 보기 ⑤를 못 찾아 다음 번호 바로 위까지' : ''}">${r.essay ? '서' : ''}${r.no}</button>`; }).join('')}</div>
+      <div class="loclegend"><span><i></i>번호로 찾음</span><span><i class="hand"></i>직접 찍음·고침</span><span><i class="miss"></i>못 찾음 (AI 짐작) · 누르면 영역을 고칠 수 있습니다</span>${nNoEnd ? `<span><i class="noend"></i>끝(보기 ⑤)을 못 찾아 다음 번호 바로 위까지 잡음 ${nNoEnd}개</span>` : ''}</div></section>`;
   }
   function rowHtml(r, i, course, mids, selfId, showAns) {
     const types = r.mid ? typesOf(course, r.mid) : [];
@@ -408,9 +409,9 @@ window.SudoRegister = function (H) {
       const miss = d.rows.filter(r => locOf(r) === 'miss').sort((a, b) => (+a.essay || 0) - (+b.essay || 0) || a.no - b.no);
       const near = r => { const o = d.rows.filter(x => x.pg && x !== r).sort((a, b) => Math.abs(a.no - r.no) - Math.abs(b.no - r.no))[0]; return r.pg || (o && o.pg) || 1; };
       const marks = d.rows.filter(r => locOf(r) !== 'miss' && r.pg && (r.an || r.box)).map(r => ({ pg: r.pg, an: r.an || [r.box[0] + 8, r.box[1] + 6], label: r.no }));
-      const got = await window.SudoPages.pickNumbers(R.pages, miss.map(r => ({ label: r.no, pg: near(r) })), marks);
+      const got = await window.SudoPages.pickNumbers(R.pages, miss.map(r => ({ label: r.no, pg: near(r), essay: !!r.essay })), marks);
       if (!got || !got.length) return;
-      got.forEach(g => { const r = miss[g.k]; r.pg = g.pg; r.an = g.an; r.boxSrc = 'pin'; });
+      got.forEach(g => { const r = miss[g.k]; r.pg = g.pg; r.an = g.an; r.end = g.end; r.endPg = g.endPg; r.boxSrc = 'pin'; });
       const pgs = [...new Set(got.map(g => g.pg))];
       window.SudoPages.pinBoxes(d.rows, R.pages, 0, pgs);
       await saveCrops(d.rows.filter(r => pgs.includes(r.pg) && (FOUND.includes(r.boxSrc) || r.boxSrc === 'pin')));
@@ -514,7 +515,7 @@ window.SudoRegister = function (H) {
     const analysis = {
       level: d.level || null, cuts: d.cuts || {}, essay: rows.filter(r => r.essay).length, status: 'checked',
       items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay, ans: r.ans || '', sol: r.sol || '',
-        q: r.q || '', ik: r.ik || '', pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '' })),
+        q: r.q || '', ik: r.ik || '', pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '', be: r.be ? 1 : 0 })),
       source: Object.assign({}, d.source || {}, { checkedAt: now() }), savedAt: now()
     };
     delete analysis.source.review;
@@ -693,13 +694,13 @@ window.SudoRegister = function (H) {
         const pages = await window.SudoPages.load(files.slice(0, 1), { maxPages: 16, noB64: true });
         j.msg = `${pages.length}쪽에서 번호 찾는 중`; prePaint();
         await new Promise(r => setTimeout(r, 20));
-        const rows = j.e.an.items.map(i => ({ no: i[0], essay: i[9], pg: i[15] || 0, box: i[16] || null, boxSrc: LOCATED.includes(i[17]) ? i[17] : '', ik: i[13] || '' }));
+        const rows = j.e.an.items.map(i => ({ no: i[0], essay: i[9], pg: i[15] || 0, box: i[16] || null, boxSrc: LOCATED.includes(i[17]) ? i[17] : '', be: i[18] || 0, ik: i[13] || '' }));
         const keep = rows.filter(r => r.boxSrc === 'manual' || r.boxSrc === 'pin');
         rows.forEach(r => { if (r.boxSrc === 'text' || r.boxSrc === 'num') r.boxSrc = ''; });
         const hit = window.SudoPages.snap(rows, pages, 0);
         const imgs = cropRows(rows.filter(r => r.boxSrc === 'text' || r.boxSrc === 'num'), pages, j.e.id);
         const analysis = docFromAn(j.e.an);
-        analysis.items.forEach((it, k) => { const r = rows[k]; if (keep.includes(r)) return; Object.assign(it, { pg: r.pg, box: r.box, bs: r.boxSrc || '', ik: r.ik || it.ik }); });
+        analysis.items.forEach((it, k) => { const r = rows[k]; if (keep.includes(r)) return; Object.assign(it, { pg: r.pg, box: r.box, bs: r.boxSrc || '', be: r.be ? 1 : 0, ik: r.ik || it.ik }); });
         analysis.source = Object.assign({}, analysis.source || {}, { resnapAt: now() });
         if (ctx) await ctx.saveAnalysis({ id: j.e.id, analysis, imgs });
         H.applySaved({ id: j.e.id, analysis });
@@ -735,7 +736,7 @@ window.SudoRegister = function (H) {
           const { result, usage } = await window.SudoAI.analyze({ settings, getToken: ctx.getToken, pages, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), withAns });
           P.usage.in += usage.in; P.usage.out += usage.out; P.usage.n++;
           const rows = rowsFromAI(result, course);
-          window.SudoPages.snap(rows, pages, 0);
+          window.SudoPages.snap(rows, pages, 0, { aiEnds: true });
           const imgs = cropRows(rows, pages, j.e.id);
           const secs = Math.round((Date.now() - t0) / 1000);
           let analysis;
@@ -743,7 +744,7 @@ window.SudoRegister = function (H) {
             analysis = docFromAn(j.e.an);
             const byNo = Object.fromEntries(rows.map(r => [r.no, r]));
             let hit = 0;
-            analysis.items.forEach(it => { const r = byNo[it.no]; if (r) { hit++; Object.assign(it, { q: r.q, pg: r.pg, box: r.box, ik: r.ik, bs: r.boxSrc || '' }); } });
+            analysis.items.forEach(it => { const r = byNo[it.no]; if (r) { hit++; Object.assign(it, { q: r.q, pg: r.pg, box: r.box, ik: r.ik, bs: r.boxSrc || '', be: r.be ? 1 : 0 }); } });
             Object.keys(imgs).forEach(k => { if (!analysis.items.some(it => it.ik === k)) delete imgs[k]; });
             analysis.source = Object.assign({}, analysis.source || {}, { imgFill: { model: settings.model, at: now(), usage } });
             j.final = true; j.msg = `${hit}문항 그림`;
@@ -753,7 +754,7 @@ window.SudoRegister = function (H) {
             analysis = {
               level: suggestLevel(rows), cuts: {}, essay: rows.filter(r => r.essay).length, status: 'ai',
               items: rows.map(r => ({ no: +r.no, pts: r.pts === '' ? 0 : +r.pts, diff: DIFF[r.diff] || '', beh: BEH[r.beh] || '', course, big: r.big || '', mid: r.mid || '', type: r.type || '', code: r.code || '', essay: !!r.essay,
-                ans: r.ans || '', sol: r.sol || '', q: r.q || '', ik: r.ik || '', conf: Math.round(r.conf * 100) / 100, pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '' })),
+                ans: r.ans || '', sol: r.sol || '', q: r.q || '', ik: r.ik || '', conf: Math.round(r.conf * 100) / 100, pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '', be: r.be ? 1 : 0 })),
               source: { kind: 'ai', provider: settings.provider, model: settings.model, at: now(), usage, secs, withAns, batch: true, files: files.map(f => f.name), warnings }, savedAt: now()
             };
             j.final = true; j.msg = `${rows.length}문항 · 확인 ${rows.filter(r => !r.ok).length}개 · ${secs}초`;

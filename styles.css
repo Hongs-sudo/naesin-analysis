@@ -667,3 +667,8 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 .mbadded div { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; padding: 4px 0; border-bottom: 1px solid var(--line) }
 @media print { .mbbanner { display: none !important } }
 .mbbanner[hidden] { display: none }
+.bp-marks i.end { border-radius: 2px; background: #B4441C }
+.bp-marks i.end span { background: #B4441C }
+.locchips button.noend { position: relative }
+.locchips button.noend::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--gold) }
+.loclegend i.noend { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); margin: 0 6px 1px 2px }

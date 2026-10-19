@@ -1,11 +1,11 @@
 // 수도 내신분석 — 화면 (PC · 아이패드 · 휴대폰)
 // 문항 한 줄(저장 모양) → 화면이 쓰는 배열
-// [0 no, 1 pts, 2 diff, 3 beh, 4 course, 5 big, 6 mid, 7 type, 8 catalog idx, 9 essay, 10 ans, 11 sol, 12 q(핵심 내용), 13 ik(그림 키), 14 conf, 15 pg, 16 box, 17 bs(영역을 잡은 방법: text·num·pin·manual, 빈칸=AI 짐작)]
+// [0 no, 1 pts, 2 diff, 3 beh, 4 course, 5 big, 6 mid, 7 type, 8 catalog idx, 9 essay, 10 ans, 11 sol, 12 q(핵심 내용), 13 ik(그림 키), 14 conf, 15 pg, 16 box, 17 bs(영역을 잡은 방법: text·num·pin·manual, 빈칸=AI 짐작), 18 be(끝을 보기 ⑤ 줄에서 찾음 1)]
 window.sudoItemArr = function (i, idx) {
   const DI = { 기본: 1, 응용: 2, 실력: 3, 심화: 4 }, BI = { 이해: 'U', 계산: 'C', 추론: 'R', 문제해결: 'P' };
   return [i.no, i.pts, DI[i.diff] || 0, BI[i.beh] || '', i.course || '', i.big || '', i.mid || '', i.type || '',
     i.code && idx[i.code] !== undefined ? idx[i.code] : -1, i.essay ? 1 : 0, i.ans || '', i.sol || '',
-    i.q || '', i.ik || '', typeof i.conf === 'number' ? i.conf : 1, i.pg || 0, i.box || null, i.bs || ''];
+    i.q || '', i.ik || '', typeof i.conf === 'number' ? i.conf : 1, i.pg || 0, i.box || null, i.bs || '', i.be ? 1 : 0];
 };
 window.sudoAnalysis = function (a, idx) {
   return { level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,

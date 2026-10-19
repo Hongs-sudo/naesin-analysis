@@ -396,7 +396,7 @@ window.SudoLibrary = function (H) {
             chunk.push(p);
           });
           // 문항 번호 위치로 영역을 맞춤 (PDF 글자 → 그림의 번호 줄). 못 찾은 문항은 AI 위치 그대로
-          window.SudoPages.snap(chunk, pages, s - 1);
+          window.SudoPages.snap(chunk, pages, s - 1, { aiEnds: true });
           chunk.forEach(p => {
             const k = probs.length;
             if (!p.boxSrc) p.conf = Math.min(p.conf, 0.69);
