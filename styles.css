@@ -701,3 +701,16 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .failbox .fh, :root:not([data-theme="light"]) .pgbar.warn { color: #F0916B } :root:not([data-theme="light"]) .failbox, :root:not([data-theme="light"]) .pgbar.warn { border-color: #F0916B; background: #3A221A } }
 :root[data-theme="dark"] .failbox .fh, :root[data-theme="dark"] .pgbar.warn { color: #F0916B }
 :root[data-theme="dark"] .failbox, :root[data-theme="dark"] .pgbar.warn { border-color: #F0916B; background: #3A221A }
+/* 검수 화면: 시험 정보 칸 · 바로 저장 표시 · 핵심 내용 */
+.metarow { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 4px }
+.metarow label { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--muted); font-weight: 700 }
+.metarow input, .metarow select { font: inherit; font-size: 16px; font-weight: 700; min-height: 40px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); color: var(--fg) }
+.metarow input#mtS { width: 120px } .metarow input#mtY { width: 92px }
+.autoact { display: flex; flex-direction: column; align-items: flex-end; gap: 8px }
+.autopill { font-size: 12.5px; border-radius: 999px; padding: 4px 12px; background: var(--surface-2); color: var(--muted) }
+.autopill.ok { background: var(--brand-soft); color: var(--brand); font-weight: 700 }
+.autopill.wait, .autopill.saving { background: var(--gold-soft); color: var(--gold-fg) }
+.autopill.bad, .autopill.err { background: var(--warn-soft); color: #9A3412; font-weight: 700 }
+.qed { font-size: 12px; margin-top: 2px } .qed summary { cursor: pointer; color: var(--muted) }
+.qed textarea { width: 100%; min-width: 180px; font: inherit; font-size: 12.5px; border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 8px; background: var(--surface); color: var(--fg); resize: vertical }
+.rolesel { font: inherit; font-size: 12px; border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 4px; background: var(--surface); color: var(--fg) }

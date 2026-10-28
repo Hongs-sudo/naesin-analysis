@@ -9,7 +9,7 @@ window.sudoItemArr = function (i, idx) {
 };
 window.sudoAnalysis = function (a, idx) {
   return { level: a.level || null, cuts: a.cuts || {}, essay: a.essay || 0, source: a.source || null,
-    status: a.status === 'ai' ? 'ai' : 'checked', items: (a.items || []).map(i => window.sudoItemArr(i, idx)) };
+    status: a.status === 'ai' ? 'ai' : 'checked', todo: Array.isArray(a.todo) && a.todo.length ? a.todo : null, items: (a.items || []).map(i => window.sudoItemArr(i, idx)) };
 };
 window.startApp = function (D, ctx) {
   const ROOT_WIN = 'N:\\공유\\공유받은\\2026 중등부\\A. 내신대비\\B. 학교별 기출문제\\';
@@ -213,8 +213,9 @@ window.startApp = function (D, ctx) {
       + (e.fl.some(f => f[2].includes('사진')) ? '<span class="tag">사진본</span>' : '');
   }
   function filesHtml(e) {
-    return e.fl.map(f => `<div class="file"><span class="ext">${esc(f[0].split('.').pop())}</span><span class="nm" title="${esc(f[0])}">${esc(f[0].split('/').pop())}</span>
-      <span class="rl">${esc(ROLE[f[1]] || f[1])}${f[2] ? ' · ' + esc(f[2]) : ''}</span>
+    const canRole = ctx && ctx.setExamFiles && CAN.school && MODE !== 'phone';
+    return e.fl.map((f, k) => `<div class="file"><span class="ext">${esc(f[0].split('.').pop())}</span><span class="nm" title="${esc(f[0])}">${esc(f[0].split('/').pop())}</span>
+      <span class="rl">${canRole ? `<select class="rolesel" data-role="${k}" data-rex="${esc(e.id)}" aria-label="파일 역할">${Object.entries(ROLE).map(([c, n]) => `<option value="${c}" ${c === f[1] ? 'selected' : ''}>${n}</option>`).join('')}</select>` : esc(ROLE[f[1]] || f[1])}${f[2] ? ' · ' + esc(f[2]) : ''}</span>
       ${MODE === 'phone' ? '' : `<button type="button" class="copy" data-copy="${esc(ROOT_WIN + f[0].replace(/\//g, '\\'))}">경로 복사</button>`}</div>`).join('')
       || '<div class="empty">MYBOX 폴더에 원본 파일이 없습니다. 분석지만 있는 시험입니다.</div>';
   }
@@ -263,6 +264,15 @@ window.startApp = function (D, ctx) {
     $$('[data-draftopen]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); location.hash = '#register'; });
     $$('[data-stats]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); openStats(byId[b.dataset.stats]); });
     $$('[data-exinfo]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); openExamInfo(byId[b.dataset.exinfo]); });
+    $$('[data-role]', root).forEach(sel => { sel.onclick = ev => ev.stopPropagation(); sel.onchange = async () => {
+      const e = byId[sel.dataset.rex], k = +sel.dataset.role, before = e.fl[k][1];
+      e.fl[k][1] = sel.value;
+      try {
+        await ctx.setExamFiles(e.id, e.fl.map(f => ({ path: f[0], role: f[1], variant: f[2] || '' })), { hasPaper: e.fl.some(f => f[1] === 'P' || f[1] === 'PA'), hasAnswer: e.fl.some(f => f[1] === 'A' || f[1] === 'PA' || f[1] === 'S') });
+        e.p = e.fl.some(f => f[1] === 'P' || f[1] === 'PA') ? 1 : 0; e.a = e.fl.some(f => f[1] === 'A' || f[1] === 'PA' || f[1] === 'S') ? 1 : 0;
+        toast('파일 역할을 바꿨습니다');
+      } catch (err) { e.fl[k][1] = before; sel.value = before; toast('바꾸지 못했습니다: ' + err.message); }
+    }; });
   }
   // ---------- 시험 정보 고치기 (원장님만): 학교·연도·학년·학기·시험을 바꾸고 문항표·그림·학생 점수를 함께 옮긴다 ----------
   const nm = x => String(x || '').replace(/^\d+\.\s*/, '').replace(/\s+/g, '');
@@ -283,6 +293,33 @@ window.startApp = function (D, ctx) {
     if (unmatched) doc.status = 'ai';
     doc.source = Object.assign({}, doc.source || {}, { movedFrom: e.id, movedAt: new Date().toISOString() });
     return { doc, keys, unmatched, rematched };
+  }
+  // 실제로 옮기기 (보관함 버튼 · 검수 화면 맨 위 칸 둘 다 여기로)
+  async function moveExamTo(e, V, log) {
+    const to = REG.idOf(V), tgt = byId[to];
+    const mv = moveAnalysis(e, V, to);
+    const info = { school: V.school, year: +V.year, grade: +V.grade, sem: +V.sem, exam: V.exam, main: MAIN4.includes(V.school) };
+    const r = await ctx.moveExam({ from: e.id, to, info, analysis: mv.doc, keys: mv.keys, overwrite: !!(tgt && tgt.an) }, log);
+    log(`옮겼습니다 · 그림 ${Object.keys(mv.keys).length}개 · 학생 점수 ${r.results}건${r.links ? ` · 보낸 링크 ${r.links}개` : ''}${mv.rematched ? ` · 유형 ${mv.rematched}개 다시 연결` : ''}${mv.unmatched ? ` · ${mv.unmatched}개는 검수에서 유형을 골라 주세요` : ''}. 화면을 새로 불러옵니다…`);
+    try { F.school = V.school; saveF(); store.set('relink', to); } catch (_) {}
+    setTimeout(() => location.reload(), 2200);
+  }
+  // 검수 화면에서 시험 정보를 바꿀 때 묻기 → true/false
+  function confirmMove(e, V) {
+    return new Promise(resolve => {
+      const to = REG.idOf(V), tgt = byId[to], nRes = Object.values(D.results || {}).filter(r => r.exam === e.id).length;
+      const sh = $('#sheet');
+      sh.innerHTML = `<div class="sheet-back" data-close></div><section class="statdlg" role="dialog" aria-modal="true" aria-labelledby="cmT">
+        <h2 id="cmT">시험 정보를 바꿀까요?</h2>
+        <p>${esc(e.s)} ${e.y} ${e.g}학년 ${e.t}학기 ${esc(e.x)} → <b>${esc(V.school)} ${V.year} ${V.grade}학년 ${V.sem}학기 ${esc(V.exam)}</b></p>
+        <p class="dl">문항표 ${e.an.items.length}문항, 문항 그림${nRes ? `, 학생 점수 ${nRes}건` : ''}, 원본 파일, 보낸 분석지 링크를 함께 옮깁니다.${+V.grade !== e.g || +V.sem !== e.t ? ` 유형은 중등${V.grade}-${V.sem}에서 이름이 같은 것으로 다시 연결합니다.` : ''}</p>
+        ${tgt && tgt.an ? '<p class="callout"><b>이 정보의 시험에 이미 문항표가 있습니다.</b> 바꾸면 그 문항표가 지금 문항표로 바뀝니다.</p>' : tgt ? '<p class="dl">보관함에 있는 같은 시험에 합칩니다.</p>' : ''}
+        <div class="row2"><button type="button" class="btn ghost" data-a="0">그만두기</button><button type="button" class="btn" data-a="1">바꾸기</button></div></section>`;
+      sh.hidden = false;
+      const done = v => { sh.hidden = true; sh.innerHTML = ''; resolve(v); };
+      $$('[data-a]', sh).forEach(b => b.onclick = () => done(b.dataset.a === '1'));
+      $$('[data-close]', sh).forEach(b => b.onclick = () => done(false));
+    });
   }
   function openExamInfo(e) {
     if (!e || !ctx || !ctx.moveExam) return;
@@ -319,14 +356,8 @@ window.startApp = function (D, ctx) {
         if (tgt && tgt.an && !(over && over.checked)) { toast('이미 있는 문항표를 바꿔도 되는지 체크해 주세요'); return; }
         go.disabled = true; go.textContent = '옮기는 중…';
         const log = t => { const l = $('#eiLog'); if (l) l.textContent = t; };
-        try {
-          const mv = moveAnalysis(e, V, to);
-          const info = { school: V.school, year: V.year, grade: V.grade, sem: V.sem, exam: V.exam, main: MAIN4.includes(V.school) };
-          const r = await ctx.moveExam({ from: e.id, to, info, analysis: mv.doc, keys: mv.keys, overwrite: !!(tgt && tgt.an) }, log);
-          log(`옮겼습니다 · 그림 ${Object.keys(mv.keys).length}개 · 학생 점수 ${r.results}건${mv.rematched ? ` · 유형 ${mv.rematched}개 다시 연결` : ''}${mv.unmatched ? ` · ${mv.unmatched}개는 검수에서 유형을 골라 주세요` : ''}. 화면을 새로 불러옵니다…`);
-          try { F.school = V.school; saveF(); } catch (_) {}
-          setTimeout(() => location.reload(), 2200);
-        } catch (err) { log('옮기지 못했습니다: ' + err.message); go.disabled = false; go.textContent = '바꾸기'; }
+        try { await moveExamTo(e, V, log); }
+        catch (err) { log('옮기지 못했습니다: ' + err.message); go.disabled = false; go.textContent = '바꾸기'; }
       };
     };
     draw();
@@ -717,13 +748,27 @@ window.startApp = function (D, ctx) {
           ${ctx ? `<div class="linkrow"><button type="button" class="btn ghost" id="linkShare">링크로 보내기 <small>휴대폰 화면 가득</small></button>${stu ? `<select id="linkDays" aria-label="링크 열람 기간">${[7, 30, 90].map(d => `<option value="${d}" ${+OUT.days === d ? 'selected' : ''}>${d}일 뒤 만료</option>`).join('')}</select>` : ''}</div>` : ''}
           <button type="button" class="btn ghost" id="saveImg">이미지로 저장</button>
           ${MODE === 'phone' ? '' : '<button type="button" class="btn ghost" id="printIt">인쇄 · PDF</button>'}
-          <p class="dl">${stu ? '‘보완할 점’' : '‘다음 시험 준비’'} 글은 분석지 위에서 눌러 바로 고칠 수 있습니다. 고친 글은 복사·저장에 그대로 들어갑니다.${isAI(e) ? ' 검수 전 시험은 복사·링크·저장·인쇄할 때마다 확인 창을 띄웁니다.' : ''}</p>
+          <p class="dl">${stu ? '‘보완할 점’' : '‘다음 시험 준비’'} 글은 분석지 위에서 눌러 바로 고칠 수 있습니다. ${stu ? '고친 글은 복사·저장에 그대로 들어갑니다.' : '고친 글은 이 시험에 저장되어 다음에 열어도 그대로입니다.'}${!stu && e.an.todo && CAN.school ? ' <button type="button" class="linkbtn" id="todoReset">처음 문장으로</button>' : ''}${isAI(e) ? ' 검수 전 시험은 복사·링크·저장·인쇄할 때마다 확인 창을 띄웁니다.' : ''}</p>
         </aside>
       </div>`;
     $$('#preview .rpt').forEach(r => window.SudoReport.fit(r));
     fitPreview();
     bindKind(); bindCommon($('#main'));
     $('#preview').addEventListener('input', ev => { const r = ev.target.closest('.rpt'); if (r) { window.SudoReport.fit(r); } });
+    // '다음 시험 준비' 문장을 고치면 시험마다 저장 (다음에 열어도 그대로 · 보낸 링크에도 반영)
+    if (!stu && ctx && ctx.saveTodo && CAN.school) {
+      let tdT = null;
+      $('#preview').addEventListener('focusout', ev => {
+        if (!ev.target.closest('[data-td-t],[data-td-b],[data-td-tb]')) return;
+        clearTimeout(tdT);
+        tdT = setTimeout(() => {
+          const list = window.SudoReport.readTodo(ev.target.closest('.rpt'));
+          if (!list || JSON.stringify(list) === JSON.stringify(e.an.todo || null)) return;
+          ctx.saveTodo(e.id, list).then(() => { e.an.todo = list; toast('‘다음 시험 준비’ 문장을 저장했습니다'); scheduleRelink(e.id); }, err => toast('문장을 저장하지 못했습니다: ' + err.message));
+        }, 400);
+      });
+      const tr = $('#todoReset'); if (tr) tr.onclick = () => ctx.saveTodo(e.id, null).then(() => { e.an.todo = null; scheduleRelink(e.id); renderOutput(); toast('처음 문장으로 되돌렸습니다'); });
+    }
     const oe = $('#outExam'); if (oe) oe.onchange = ev => { OUT.id = ev.target.value; renderOutput(); };
     const os = $('#outStu'); if (os) os.onchange = ev => { OUT.sid = ev.target.value; OUT.sx = null; renderOutput(); };
     const ox = $('#outSx'); if (ox) ox.onchange = ev => { OUT.sx = ev.target.value; renderOutput(); };
@@ -766,15 +811,18 @@ window.startApp = function (D, ctx) {
       // 분석지를 지금 모습(고친 글 포함) 그대로 공개용 링크로 저장. 주소는 길고 무작위라 아는 사람만 열 수 있음
       const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789', rnd = crypto.getRandomValues(new Uint8Array(18));
       const id = [...rnd].map(x => a[x % a.length]).join('');
-      let html;
+      let html; const extraExp = {};
       if (stu) {
         // 학생 링크는 휴대폰용 세로형 한 장으로 따로 만든다 (고친 '보완할 점' 글은 그대로)
-        const exp = new Date(Date.now() + OUT.days * 864e5), ymd = `${exp.getFullYear()}-${String(exp.getMonth() + 1).padStart(2, '0')}-${String(exp.getDate()).padStart(2, '0')}`;
+        const exp = new Date(Date.now() + OUT.days * 864e5), ymd = `${exp.getFullYear()}-${String(exp.getMonth() + 1).padStart(2, '0')}-${String(exp.getDate()).padStart(2, '0')}`; extraExp.ymd = ymd;
         html = [window.SudoReport.studentLink(e, NOTE, Object.assign({}, extra, { sim: OUT.sim ? (SIMC[simKey] || []) : undefined }), { fixes: window.SudoReport.readFixes($('#preview')), expires: ymd })];
       } else html = $$('#preview .rpt').map(r => { const c = r.cloneNode(true); c.style.transform = 'none'; c.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); c.querySelectorAll('[data-screen-only]').forEach(x => x.remove()); return c.outerHTML; });
       const title = `${stu ? sd.name + ' 학생 · ' : ''}${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석`;
       const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'r.html#' + id;
-      const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, kind: stu ? 'student' : 'exam', createdAt: new Date().toISOString() }, stu ? +OUT.days : 0);
+      // p: 나중에 시험을 고치면 이 링크를 같은 모양으로 다시 만들기 위한 설정
+      const p = stu ? { kind: 'student', fmt: OUT.fmt, sid: OUT.sid, avg: !!OUT.avg, sim: !!OUT.sim, note: Object.assign({}, NOTE), fixes: window.SudoReport.readFixes($('#preview')), expires: extraExp.ymd }
+        : { kind: 'exam', fmt: OUT.fmt, sim: !!OUT.sim, note: Object.assign({}, NOTE) };
+      const saved = ctx.shareReport(id, { html, title, fmt: OUT.fmt, exam: e.id, kind: stu ? 'student' : 'exam', p, createdAt: new Date().toISOString() }, stu ? +OUT.days : 0);
       const msg = `링크를 복사했습니다${stu ? ` (${OUT.days}일 뒤 만료)` : ''}. 카톡에 붙여넣기 하세요`;
       saved.then(() => {}, err => toast('링크를 만들지 못했습니다: ' + err.message));
       if (MODE === 'phone' && navigator.share) {
@@ -832,13 +880,52 @@ window.startApp = function (D, ctx) {
     }
     A[id] = window.sudoAnalysis(analysis, idx);
     byId[id].an = A[id];
+    if (A[id].status !== 'ai') scheduleRelink(id);
     listsRefresh(); recRefresh(); anRefresh(); if (SIM) SIM.reset();
     Object.keys(SIMC).forEach(k => delete SIMC[k]);
     const sc = $('#sideCount'); if (sc) sc.textContent = `${D.exams.length}개 시험 · ${schools.length}개 학교`;
   }
+  // ---------- 보낸 분석지 링크를 새 내용으로 다시 만들기 ----------
+  const RELINK = {};
+  function scheduleRelink(id) {
+    if (!ctx || !ctx.listShared || !CAN.school) return;
+    clearTimeout(RELINK[id]); RELINK[id] = setTimeout(() => relink(id).catch(() => {}), 6000);
+  }
+  async function renderShared(e, p) {
+    const note = Object.assign({ on: false, student: '', text: '', by: '' }, p.note || {});
+    const extra = { simOn: !!p.sim };
+    if (p.kind === 'student') {
+      if (!D.students[p.sid] || !D.results[`${p.sid}_${e.id}`]) return null;
+      const sd = STU.reportData(p.sid, e.id, p.avg); extra.student = sd;
+      if (p.sim) extra.sim = await SIM.find(SIM.studentTargets(e, window.SudoReport.studentCalc(e, sd.res).lost), { exam: e }).catch(() => []);
+      return { html: [window.SudoReport.studentLink(e, note, extra, { fixes: p.fixes, expires: p.expires })], title: `${sd.name} 학생 · ${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석` };
+    }
+    if (p.sim) extra.sim = await SIM.find(SIM.examTargets(e), { exam: e }).catch(() => []);
+    const pages = window.SudoReport.build(p.fmt, e, rctx, note, extra);
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:-20000px;top:0;width:1200px;visibility:hidden;pointer-events:none';
+    box.innerHTML = pages.map(x => `<div class="pg">${x}</div>`).join('');
+    document.body.appendChild(box);
+    await new Promise(r => setTimeout(r, 50));
+    const html = $$('.rpt', box).map(r => { window.SudoReport.fit(r); r.style.transform = 'none'; r.querySelectorAll('[contenteditable]').forEach(x => x.removeAttribute('contenteditable')); r.querySelectorAll('[data-screen-only]').forEach(x => x.remove()); return r.outerHTML; });
+    box.remove();
+    return { html, title: `${short(e.s)}중 ${e.g}학년 ${e.t}학기 ${e.x}고사 분석` };
+  }
+  async function relink(id) {
+    const e = byId[id]; if (!e || !e.an) return;
+    const docs = await ctx.listShared(id);
+    let n = 0, old = 0;
+    for (const x of docs) {
+      if (x.data.expiresAt && x.data.expiresAt < new Date().toISOString()) continue;
+      if (!x.data.p) { old++; continue; }
+      try { const r = await renderShared(e, x.data.p); if (!r) continue; await ctx.updateShared(x.id, { html: r.html, title: r.title, updatedAt: new Date().toISOString() }); n++; } catch (_) { /* 한 링크 실패는 넘어감 */ }
+    }
+    if (n || old) toast(`보낸 분석지 링크 ${n}개를 새 내용으로 바꿨습니다${old ? ` · 예전 방식 링크 ${old}개는 그대로입니다 (다시 보내야 바뀜)` : ''}`);
+  }
   let SIM = null;
   const REG = window.SudoRegister({
     D, ctx, byId, A, REC, schools, years, esc, toast, $, $$, DIFF, BEH, ROLE, ROOT_WIN, MAIN4, short, applySaved, openStats,
+    confirmMove: (e, V) => confirmMove(e, V), moveExamTo: (e, V, log) => moveExamTo(e, V, log),
     mode: () => MODE,
     go: v => { if ((location.hash || '#archive').slice(1) !== v) location.hash = '#' + v; },
     openExam: id => { const e = byId[id]; F.school = e.s; F.course = '전체'; F.year = '전체'; F.exam = '전체'; F.state = '전체'; F.q = ''; F.open = id; saveF(); if (location.hash === '#archive') route(); else location.hash = '#archive'; },
@@ -867,6 +954,8 @@ window.startApp = function (D, ctx) {
   }
   const MYB = window.SudoMybox({ D, ctx, byId, esc, toast, $, $$, MAIN4, addExamFiles, libFound: () => LIB.foundCount(), openPre: () => REG.openPre(), afterScan: () => LIB.fromMybox() });
   window.__mybox = MYB;
+  // 시험 정보를 바꾼 뒤 다시 불러왔으면, 그 시험의 보낸 링크를 새 내용으로
+  { const rl = store.get('relink', null); if (rl) { store.set('relink', null); if (byId[rl]) scheduleRelink(rl); } }
   // 권한별로 보이는 화면
   const ROLEN = { owner: '원장', co: '원장(공동)', admin: '관리자', teacher: '선생님' };
   const CAN = (ctx && ctx.can) || { school: true, register: true, library: true, types: true, members: false, remove: true, allStudents: true, aiSettings: true };

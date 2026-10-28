@@ -89,11 +89,11 @@ window.SudoRegister = function (H) {
       return r;
     });
     const src = ai ? Object.assign({}, e.an.source || {}, { kind: 'ai', review: true }) : { kind: 'edit', at: now() };
-    return newDraft(metaOf(e), src, rows, { level: e.an.level || '', cuts: Object.assign({}, e.an.cuts || {}), warnings: ai ? ((e.an.source || {}).warnings || []) : [] });
+    return newDraft(metaOf(e), src, rows, { level: e.an.level || '', cuts: Object.assign({}, e.an.cuts || {}), warnings: ai ? ((e.an.source || {}).warnings || []) : [], auto: !ai });
   }
   // 저장된 분석(배열) → 저장 모양
   function docFromAn(an) {
-    return { level: an.level || null, cuts: an.cuts || {}, essay: an.essay || 0, source: an.source || null, status: an.status || 'checked',
+    return { level: an.level || null, cuts: an.cuts || {}, essay: an.essay || 0, source: an.source || null, status: an.status || 'checked', todo: an.todo || null,
       items: an.items.map(i => ({ no: i[0], pts: i[1], diff: DIFF[i[2]] || '', beh: BEH[i[3]] || '', course: i[4], big: i[5], mid: i[6], type: i[7],
         code: i[8] >= 0 ? D.catalog[i[8]][0] : '', essay: !!i[9], ans: i[10] || '', sol: i[11] || '', q: i[12] || '', ik: i[13] || '', conf: i[14], pg: i[15] || 0, box: i[16] || null, bs: i[17] || '', be: i[18] || 0 })) };
   }
@@ -478,8 +478,8 @@ window.SudoRegister = function (H) {
     D.drafts[d.id] = JSON.parse(JSON.stringify(d));
     if (ctx) await ctx.saveDraft(d.id, D.drafts[d.id]);
   }
-  function openDraft(d, keepPages) { if (!keepPages) R.pages = null; R.draft = d; local.set(d); H.go('register'); render(); window.scrollTo(0, 0); }
-  function closeDraft() { R.draft = null; R.pages = null; local.set(null); render(); }
+  function openDraft(d, keepPages) { if (!keepPages) R.pages = null; R.draft = d; R.orig = d.auto ? JSON.parse(JSON.stringify({ rows: d.rows, level: d.level })) : null; R.autoState = d.auto ? 'idle' : ''; local.set(d); H.go('register'); render(); window.scrollTo(0, 0); }
+  function closeDraft() { clearTimeout(R.autoT); R.draft = null; R.pages = null; R.orig = null; local.set(null); render(); }
 
   // ---------- 화면: 검수 ----------
   function sumOf(rows) { return Math.round(rows.reduce((s, r) => s + (+r.pts || 0), 0) * 100) / 100; }
@@ -497,9 +497,10 @@ window.SudoRegister = function (H) {
     const mdl = (window.SudoAI.MODELS[src.provider] || []).find(x => x[0] === src.model);
     const srcText = src.kind === 'ai' ? `${mdl ? mdl[1].replace(/ \(.*\)$/, '') : src.model}가 읽음${src.secs ? ` · ${src.secs}초` : ''}` : src.kind === 'edit' ? '저장된 문항표 고치기' : '직접 입력';
     $('#main').innerHTML = `
-      <div class="head"><div><div class="kicker">검수 · ${esc(srcText)}</div><h1>${esc(m.school)} ${m.year} ${m.grade}학년 ${m.sem}학기 ${esc(m.exam)}</h1></div>
-        <div class="headact"><button type="button" class="btn ghost" id="rvBack">목록으로</button><button type="button" class="btn ghost" id="rvTemp">임시 저장</button><button type="button" class="btn" id="rvSave">검수 끝 · 저장</button></div></div>
-      <ol class="steps"><li class="on">시험 고르기</li><li class="on">시험지 파일</li><li class="on">AI 읽기 · 직접 입력</li><li class="on">검수 후 저장</li></ol>
+      <div class="head"><div><div class="kicker">${d.auto ? '문항표 고치기 · 고치면 바로 저장되고 분석지에 반영됩니다' : `검수 · ${esc(srcText)}`}</div>${metaHtml(d)}</div>
+        ${d.auto ? `<div class="headact autoact"><span class="autopill" id="autoPill" role="status">${autoText()}</span><span class="row2">${R.orig ? '<button type="button" class="btn ghost" id="rvUndo">이번에 고친 것 되돌리기</button>' : ''}<button type="button" class="btn" id="rvBack">다 고쳤어요</button></span></div>`
+        : '<div class="headact"><button type="button" class="btn ghost" id="rvBack">목록으로</button><button type="button" class="btn ghost" id="rvTemp">임시 저장</button><button type="button" class="btn" id="rvSave">검수 끝 · 저장</button></div>'}</div>
+      ${d.auto ? '' : '<ol class="steps"><li class="on">시험 고르기</li><li class="on">시험지 파일</li><li class="on">AI 읽기 · 직접 입력</li><li class="on">검수 후 저장</li></ol>'}
       <div class="rvsum">
         <div class="kpi"><span>문항</span><b>${rows.length}개</b><small>서답형 ${rows.filter(r => r.essay).length}</small></div>
         <div class="kpi ${Math.abs(total - 100) > 0.01 ? 'bad' : ''}"><span>배점 합계</span><b>${total}점</b><small>${Math.abs(total - 100) > 0.01 ? '100점이 아닙니다' : '맞음'}</small></div>
@@ -606,18 +607,125 @@ window.SudoRegister = function (H) {
       <td><div class="dseg">${[1, 2, 3, 4].map(k => `<button type="button" data-diff="${k}" class="d${k}" aria-pressed="${r.diff === k}" title="${DIFF[k]}">${DIFF[k]}</button>`).join('')}</div></td>
       <td><select data-k="beh" aria-label="${r.no}번 행동영역"><option value=""></option>${BEHK.map(k => `<option value="${k}" ${r.beh === k ? 'selected' : ''}>${BEH[k]}</option>`).join('')}</select></td>
       <td><select data-k="mid" aria-label="${r.no}번 중단원"><option value="">고르기</option>${midOpts}<option value="__new">＋ 새 중단원</option></select></td>
-      <td><div class="tcell">${typeSel}${newIn}${past.length ? `<small class="past" title="${esc(past.map(p => `${p.s} ${p.e.y} ${p.e.g}-${p.e.t} ${p.e.x} ${p.no}번`).join('\n'))}">지난 출제 ${past.length}번 · ${esc(past.slice(0, 2).map(p => `${H.short(p.s)} ${p.e.g}-${p.e.t}${p.e.x[0]} ${p.no}번`).join(', '))}${past.length > 2 ? ' 외' : ''}</small>` : ''}${r.note ? `<small class="note">AI: ${esc(r.note)}</small>` : ''}${r.q ? `<small class="qtx" title="${esc(r.q)}">${esc(r.q)}</small>` : ''}</div></td>
+      <td><div class="tcell">${typeSel}${newIn}${past.length ? `<small class="past" title="${esc(past.map(p => `${p.s} ${p.e.y} ${p.e.g}-${p.e.t} ${p.e.x} ${p.no}번`).join('\n'))}">지난 출제 ${past.length}번 · ${esc(past.slice(0, 2).map(p => `${H.short(p.s)} ${p.e.g}-${p.e.t}${p.e.x[0]} ${p.no}번`).join(', '))}${past.length > 2 ? ' 외' : ''}</small>` : ''}${r.note ? `<small class="note">AI: ${esc(r.note)}</small>` : ''}<details class="qed"><summary>핵심 내용${r.q ? '' : ' <span class="dl">(없음)</span>'}</summary><textarea data-k="q" rows="2" aria-label="${r.no}번 핵심 내용" placeholder="문제를 짧게 옮겨 적기 · 유사문항 찾기에 쓰입니다">${esc(r.q || '')}</textarea></details></div></td>
       <td><input data-k="essay" type="checkbox" ${r.essay ? 'checked' : ''} aria-label="${r.no}번 서답형"></td>
       ${showAns ? `<td><input data-k="ans" value="${esc(r.ans || '')}" class="w5" aria-label="${r.no}번 정답" title="${esc(r.sol || '')}">${r.sol ? `<small class="sol">${esc(r.sol)}</small>` : ''}</td>` : ''}
       <td><button type="button" class="okbtn" data-ok aria-pressed="${!!r.ok}" title="확인">${r.ok ? '✓' : '확인'}</button></td>
       <td><button type="button" class="xbtn" data-del title="문항 빼기" aria-label="${r.no}번 빼기">×</button></td></tr>`;
   }
-  function touch(rerender) { R.draft.updatedAt = now(); local.set(R.draft); if (rerender) renderReview(); }
+  function touch(rerender) { R.draft.updatedAt = now(); local.set(R.draft); if (rerender) renderReview(); if (R.draft.auto) scheduleAuto(); }
+  // ---------- 분석이 끝난 시험: 고치면 바로 저장 ----------
+  function autoText() {
+    const st = R.autoState;
+    if (st === 'wait' || st === 'saving') return '저장하는 중…';
+    if (st === 'ok') return `저장됨 ✓ · ${R.autoAt ? `${pad2(R.autoAt.getHours())}:${pad2(R.autoAt.getMinutes())}` : ''} · 분석지에 반영`;
+    if (st === 'bad') return `저장 안 됨 · ${esc(R.autoMsg || '')}`;
+    if (st === 'err') return `저장 실패 · ${esc(R.autoMsg || '')}`;
+    return '고치면 바로 저장됩니다';
+  }
+  function paintAuto() { const el = $('#autoPill'); if (el) { el.innerHTML = autoText(); el.className = 'autopill ' + (R.autoState || ''); } }
+  function scheduleAuto() { R.autoState = 'wait'; paintAuto(); clearTimeout(R.autoT); R.autoT = setTimeout(autoSave, 1500); }
+  async function flushAuto() { if (R.autoState === 'wait') { clearTimeout(R.autoT); await autoSave(true); } while (R.autoState === 'saving') await new Promise(r => setTimeout(r, 100)); }
+  function hardProbs(rows) {
+    const nos = rows.map(r => r.no);
+    if (!rows.length) return '문항이 없습니다';
+    if (new Set(nos).size !== nos.length) return '번호가 겹칩니다';
+    if (rows.some(r => r.pts === '' || !(+r.pts > 0))) return '배점이 빈 문항이 있습니다';
+    if (rows.some(r => !r.diff)) return '난이도가 빈 문항이 있습니다';
+    if (rows.some(r => !r.beh)) return '행동영역이 빈 문항이 있습니다';
+    if (rows.some(r => !r.mid)) return '중단원이 빈 문항이 있습니다';
+    if (rows.some(r => !r.code && !String(r.type || '').replace(/^\d+\.\s*/, '').trim())) return '유형 이름이 빈 문항이 있습니다';
+    return '';
+  }
+  async function autoSave(now2) {
+    const d = R.draft; if (!d || !d.auto) return;
+    const a = document.activeElement;
+    if (!now2 && a && a.matches && a.matches('input[data-k="type"], textarea[data-k="q"]')) { R.autoT = setTimeout(autoSave, 1500); return; }
+    const prob = hardProbs(d.rows);
+    if (prob) { R.autoState = 'bad'; R.autoMsg = prob; paintAuto(); return; }
+    R.autoState = 'saving'; paintAuto();
+    try { await saveQuiet(d); R.autoState = 'ok'; R.autoAt = new Date(); }
+    catch (e) { R.autoState = 'err'; R.autoMsg = e.message; }
+    paintAuto();
+  }
+  function buildAnalysis(d, rows, course, status) {
+    const prev = byId[d.id] && byId[d.id].an;
+    const a = {
+      level: d.level || null, cuts: d.cuts || {}, essay: rows.filter(r => r.essay).length, status,
+      items: rows.map(r => ({ no: +r.no, pts: +r.pts, diff: DIFF[r.diff], beh: BEH[r.beh], course, big: r.big || '', mid: r.mid, type: r.type || '', code: r.code || '', essay: !!r.essay, ans: r.ans || '', sol: r.sol || '',
+        q: r.q || '', ik: r.ik || '', pg: r.pg || 0, box: r.box || null, bs: r.boxSrc || '', be: r.be ? 1 : 0 })),
+      source: Object.assign({}, d.source || {}, { checkedAt: now() }), savedAt: now()
+    };
+    if (prev && prev.todo) a.todo = prev.todo;
+    delete a.source.review;
+    return a;
+  }
+  async function saveQuiet(d) {
+    const m = d.meta, course = m.course, rows = d.rows.slice().sort((a, b) => a.no - b.no);
+    const newTypes = makeTypes(rows, course, m, d.id);
+    const analysis = buildAnalysis(d, rows, course, 'checked');
+    analysis.source.kind = 'edit'; analysis.source.editedAt = now();
+    if (ctx) await ctx.saveAnalysis({ id: d.id, exam: null, analysis, newTypes });
+    // 핵심 내용을 고친 문항은 유사문항을 다시 찾도록 저장된 결과를 지움
+    const qs = d.rows.filter(r => r.qEdited); if (qs.length && ctx && ctx.dropSimilar) { ctx.dropSimilar(qs.map(r => `v3_${d.id}_${r.no}`.replace(/\//g, '_'))).catch(() => {}); qs.forEach(r => { delete r.qEdited; }); }
+    delete D.drafts[d.id];
+    H.applySaved({ id: d.id, exam: null, analysis, newTypes });
+    if (newTypes.length) { local.set(d); }
+  }
+  // ---------- 검수 화면 맨 위: 시험 정보 (학교·연도·학년·학기·시험) ----------
+  function metaEditable(d) {
+    const e = byId[d.id];
+    if (!(ctx && ctx.can && ctx.can.editExam)) return '';
+    if (e && e.an) return 'move';      // 저장된 시험: 문항표·그림·점수를 함께 옮김
+    if (!e) return 'draft';            // 아직 보관함에 없는 새 시험: 이름표만 바꿈
+    return '';                          // MYBOX 시험의 첫 검수: 저장한 뒤 고칠 수 있음
+  }
+  function metaHtml(d) {
+    const m = d.meta, how = metaEditable(d);
+    if (!how) return `<h1>${esc(m.school)} ${m.year} ${m.grade}학년 ${m.sem}학기 ${esc(m.exam)}</h1>${ctx && ctx.can && ctx.can.editExam ? '<small class="dl">시험 정보는 ‘검수 끝 · 저장’ 뒤에 고칠 수 있습니다</small>' : ''}`;
+    return `<div class="metarow" role="group" aria-label="시험 정보">
+      <label>학교<input id="mtS" list="mtSL" value="${esc(m.school)}"><datalist id="mtSL">${H.schools.map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+      <label>연도<input id="mtY" type="number" min="2015" max="2040" value="${m.year}"></label>
+      <label>학년<select id="mtG">${[1, 2, 3].map(g => `<option value="${g}" ${g === +m.grade ? 'selected' : ''}>${g}학년</option>`).join('')}</select></label>
+      <label>학기<select id="mtT">${[1, 2].map(t => `<option value="${t}" ${t === +m.sem ? 'selected' : ''}>${t}학기</option>`).join('')}</select></label>
+      <label>시험<select id="mtX">${['중간', '기말'].map(x => `<option ${x === m.exam ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>`;
+  }
+  function bindMeta(d) {
+    const how = metaEditable(d); if (!how) return;
+    const read = () => { let sc = $('#mtS').value.trim(); if (sc && !/중$/.test(sc)) sc += '중'; return { school: sc, year: +$('#mtY').value, grade: +$('#mtG').value, sem: +$('#mtT').value, exam: $('#mtX').value }; };
+    const reset = () => { const m = d.meta; $('#mtS').value = m.school; $('#mtY').value = m.year; $('#mtG').value = m.grade; $('#mtT').value = m.sem; $('#mtX').value = m.exam; };
+    const on = async () => {
+      const V = read(); if (!V.school || !V.year) return;
+      if (idOf(V) === d.id) return;
+      if (how === 'draft') {
+        const old = d.id, course = courseOf(V);
+        if (course !== d.meta.course) d.rows.forEach(r => { const c = r.code && D.catalog[catIdx()[r.code]]; if (c && c[1] !== course) r.code = ''; });
+        d.meta = Object.assign({}, V, { course }); d.id = idOf(V); d.isNew = !byId[d.id];
+        delete D.drafts[old]; if (ctx && ctx.deleteDraft) ctx.deleteDraft(old).catch(() => {});
+        touch(true); toast('시험 정보를 바꿨습니다. 저장할 때 이 정보로 들어갑니다');
+        return;
+      }
+      const ok = await H.confirmMove(byId[d.id], V);
+      if (!ok) { reset(); return; }
+      await flushAuto();
+      try { await H.moveExamTo(byId[d.id], V, t => toast(t)); local.set(null); }
+      catch (e) { toast('옮기지 못했습니다: ' + e.message); reset(); }
+    };
+    ['#mtS', '#mtY', '#mtG', '#mtT', '#mtX'].forEach(q => { const el = $(q); if (el) el.onchange = on; });
+  }
   function bindReview() {
     const d = R.draft;
-    $('#rvBack').onclick = () => { if (confirmLeave()) closeDraft(); };
-    $('#rvTemp').onclick = async ev => { const bt = ev.currentTarget; bt.disabled = true; try { await saveDraftRemote(d); toast('임시 저장했습니다. 검수 대기에서 이어서 볼 수 있습니다'); } catch (e) { toast('저장하지 못했습니다: ' + e.message); } bt.disabled = false; };
-    $('#rvSave').onclick = ev => saveFinal(ev.currentTarget);
+    $('#rvBack').onclick = async () => {
+      if (d.auto) { await flushAuto(); if (R.autoState === 'bad' && !confirm(`저장하지 못한 것이 있습니다: ${R.autoMsg}\n그래도 닫을까요? (마지막으로 저장된 내용이 남습니다)`)) return; const id = d.id; closeDraft(); H.openExam(id); return; }
+      if (confirmLeave()) closeDraft();
+    };
+    const ud = $('#rvUndo'); if (ud) ud.onclick = () => {
+      if (!confirm('이번에 문항표를 연 뒤 고친 것을 모두 처음대로 되돌릴까요? (바꾼 문항 그림은 되돌아가지 않습니다)')) return;
+      const o = JSON.parse(JSON.stringify(R.orig)); d.rows = o.rows; d.level = o.level; touch(true); toast('처음대로 되돌렸습니다');
+    };
+    bindMeta(d);
+    const rt = $('#rvTemp'); if (rt) rt.onclick = async ev => { const bt = ev.currentTarget; bt.disabled = true; try { await saveDraftRemote(d); toast('임시 저장했습니다. 검수 대기에서 이어서 볼 수 있습니다'); } catch (e) { toast('저장하지 못했습니다: ' + e.message); } bt.disabled = false; };
+    const rsv = $('#rvSave'); if (rsv) rsv.onclick = ev => saveFinal(ev.currentTarget);
     $('#rvLevel').onchange = ev => { d.level = ev.target.value; touch(); };
     const rs = $('#rvStats'); if (rs) rs.onclick = () => H.openStats(byId[d.id], () => renderReview());
     const ra = $('#rvAns'); if (ra) ra.onclick = () => {
@@ -670,6 +778,7 @@ window.SudoRegister = function (H) {
         else if (k === 'essay') r.essay = el.checked ? 1 : 0;
         else if (k === 'type') r.type = el.value.trim();
         else if (k === 'ans') r.ans = el.value.trim();
+        else if (k === 'q') { r.q = el.value.trim(); r.qEdited = 1; }
         else if (k === 'mid') {
           if (el.value === '__new') {
             const name = prompt('새 중단원 이름 (예: 03.일차부등식)'); if (!name) { el.value = r.mid; return; }

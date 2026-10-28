@@ -56,6 +56,7 @@ service cloud.firestore {
     // 학부모님께 보내는 분석지 링크: 링크를 아는 사람만 한 건씩 열람. 학생 링크는 exp가 지나면 닫힘.
     match /shared/{id} {
       allow get: if !('exp' in resource.data) || request.time < resource.data.exp;
+      allow list: if isAdmin();   // 시험을 고치면 그 시험의 링크를 찾아 새 내용으로 바꾸기
       allow create: if isStaff();
       allow update, delete: if isAdmin();
     }

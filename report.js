@@ -112,7 +112,9 @@
     }
     if (essayN) todo.push(['서술형 풀이 쓰기', `서답형 ${essayN}문항 ${essayPts}점. 풀이 과정을 끝까지 쓰는 연습`]);
     else todo.push(['마킹 전 검산', '객관식만 나와 부분 점수가 없습니다. 계산 실수를 줄이는 습관']);
-    return { it, n, total, cnt, pts, bigs, mids, objMax, killers, beh, lv, cuts, essayN, essayPts, prev, habits, todo: todo.slice(0, 3), st: e.st || null };
+    // 원장님이 고쳐서 저장한 문장이 있으면 그것을 쓴다 [{t, b}]
+    const saved = Array.isArray(e.an.todo) && e.an.todo.length ? e.an.todo.map(x => [x.t || '', x.b || '']) : null;
+    return { it, n, total, cnt, pts, bigs, mids, objMax, killers, beh, lv, cuts, essayN, essayPts, prev, habits, todo: saved || todo.slice(0, 3), todoSaved: !!saved, st: e.st || null };
   }
 
   // ---------- 공통 조각 ----------
@@ -178,8 +180,8 @@
         <div style="display:grid;grid-template-columns:repeat(${S.todo.length},minmax(0,1fr));gap:12px">${S.todo.map((t, k) => `
           <div style="border-radius:12px;background:${K.cream};padding:14px;display:flex;flex-direction:column;gap:6px">
             <span style="font-size:22px;font-weight:900;color:${K.gold}">0${k + 1}</span>
-            ${editable(t[0], 'span', 'font-size:15px;font-weight:700')}
-            ${editable(t[1], 'span', `font-size:13px;line-height:1.6;color:${K.ink2}`)}</div>`).join('')}</div>
+            ${editable(t[0], 'span', 'font-size:15px;font-weight:700', `data-td-t="${k}"`)}
+            ${editable(t[1], 'span', `font-size:13px;line-height:1.6;color:${K.ink2}`, `data-td-b="${k}"`)}</div>`).join('')}</div>
       </section>
 <!--SIM-->
 <!--NOTE-->
@@ -219,7 +221,7 @@
           ${S.habits.slice(0, 3).map(h => `<div style="display:flex;gap:8px;font-size:13.5px;line-height:1.5"><b style="color:${K.gold};flex:0 0 auto">${esc(h[0])}</b><span>${esc(h[1])}</span></div>`).join('')}</div>` : ''}
         <div style="background:${K.g};border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;color:#fff">
           <div style="font-size:15px;font-weight:900;color:${K.gold2}">다음 시험 준비 ${S.todo.length}가지</div>
-          ${S.todo.map((t, k) => `<div style="display:flex;gap:10px;font-size:14px;line-height:1.5"><b style="color:${K.gold2}">0${k + 1}</b>${editable(t[0] + ' — ' + t[1])}</div>`).join('')}</div>
+          ${S.todo.map((t, k) => `<div style="display:flex;gap:10px;font-size:14px;line-height:1.5"><b style="color:${K.gold2}">0${k + 1}</b>${editable(t[0] + ' — ' + t[1], 'span', '', `data-td-tb="${k}"`)}</div>`).join('')}</div>
 <!--SIM-->
 <!--NOTE-->
         <div style="text-align:center;font-size:12px;color:${K.mute};padding:4px 0 6px">1:1 명품 맞춤 수학학원 · 수학도서관</div>
@@ -350,7 +352,7 @@
         </section>
         <section style="border:1px solid ${K.line};border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#FAF8F2">
           <div style="font-size:14px;font-weight:700">다음 시험을 위한 준비</div>
-          ${S.todo.map((t, k) => `<div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;border-bottom:1px solid #ECF1EF">${editable(t[0], 'b', `font-size:13px;color:${K.g}`)}${editable(t[1], 'span', `font-size:12px;line-height:1.5;color:${K.ink2}`)}</div>`).join('')}
+          ${S.todo.map((t, k) => `<div style="display:flex;flex-direction:column;gap:2px;padding-bottom:6px;border-bottom:1px solid #ECF1EF">${editable(t[0], 'b', `font-size:13px;color:${K.g}`, `data-td-t="${k}"`)}${editable(t[1], 'span', `font-size:12px;line-height:1.5;color:${K.ink2}`, `data-td-b="${k}"`)}</div>`).join('')}
         </section>
       </div>
 <!--NOTE-->
@@ -583,6 +585,14 @@
       </div></div>`;
   }
   // 미리보기에서 고친 '보완할 점' 글 읽기
+  // 분석지 위에서 고친 '다음 시험 준비' 문장 읽기 → [{t, b}] (없으면 null)
+  function readTodo(root) {
+    const out = [];
+    root.querySelectorAll('[data-td-t]').forEach(el => { const k = +el.dataset.tdT, b = root.querySelector(`[data-td-b="${k}"]`); out[k] = { t: el.textContent.trim(), b: b ? b.textContent.trim() : '' }; });
+    if (!out.length) root.querySelectorAll('[data-td-tb]').forEach(el => { const k = +el.dataset.tdTb, [t, ...b] = el.textContent.split(' — '); out[k] = { t: (t || '').trim(), b: b.join(' — ').trim() }; });
+    const list = out.filter(Boolean).filter(x => x.t || x.b);
+    return list.length ? list : null;
+  }
   function readFixes(root, n) {
     const out = [];
     for (let k = 0; k < (n || 3); k++) {
@@ -691,7 +701,7 @@
       if (format === 'detail') return [detail1(e, S), put(detail2(e, S, ctx), false, '이번', 110)].map(wrapA4);
       return [put(simple(e, S), false, '이번', 104)].map(wrapA4);
     },
-    studentCalc, studentFixes, readFixes,
+    studentCalc, studentFixes, readFixes, readTodo,
     studentLink(e, note, extra, opt) {
       const st = Object.assign({}, extra.student); st.C = studentCalc(e, st.res); st.fixes = studentFixes(e, st.C, st.res, st.avg);
       return sLink(e, st, note, Object.assign({ sim: extra.sim, simOn: extra.simOn }, opt || {}));

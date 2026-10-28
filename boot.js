@@ -204,8 +204,10 @@
         }
         // 2. 학생 점수
         const res = await db.collection('results').where('exam', '==', from).get();
-        // 3. 새 시험·문항표 쓰고 옛 것 지우기 (한 번에)
+        // 3. 새 시험·문항표 쓰고 옛 것 지우기 (한 번에) · 보낸 링크는 새 시험을 가리키게
+        const links = await db.collection('shared').where('exam', '==', from).get().catch(() => ({ docs: [], size: 0 }));
         const b = db.batch();
+        links.docs.forEach(d => b.update(d.ref, { exam: to }));
         b.set(exRef(to), strip(exDoc));
         b.set(db.collection('analyses').doc(to), strip(analysis));
         res.docs.forEach(d => { const r = d.data(); b.set(db.collection('results').doc(`${r.student}_${to}`), Object.assign({}, r, { exam: to })); b.delete(d.ref); });
@@ -215,8 +217,17 @@
         await b.commit();
         db.collection('regfails').doc(from).delete().catch(() => {});
         // 옛 그림은 지우지 않고 둔다 (이미 보낸 링크·되돌리기 대비)
-        return { results: res.size };
+        return { results: res.size, links: links.docs.length };
       },
+      // 분석지의 '다음 시험 준비' 문장 (null이면 처음 문장으로)
+      saveTodo: (id, todo) => db.collection('analyses').doc(id).update({ todo: todo ? strip(todo) : firebase.firestore.FieldValue.delete() }),
+      // 유사문항 저장 결과 지우기 (핵심 내용을 고친 문항)
+      dropSimilar: async keys => { const b = db.batch(); keys.forEach(k => b.delete(db.collection('similar').doc(k))); await b.commit(); },
+      // 원본 파일 역할 고치기
+      setExamFiles: (id, files, flags) => db.collection('exams').doc(id).update(Object.assign({ files: strip(files) }, flags || {})),
+      // 보낸 분석지 링크: 이 시험의 링크 목록 · 내용 바꾸기
+      listShared: id => db.collection('shared').where('exam', '==', id).get().then(s => s.docs.map(d => ({ id: d.id, data: d.data() }))),
+      updateShared: (id, data) => db.collection('shared').doc(id).update(strip(data)),
       // 시험 등록 실패 기록 (원장님만 읽기 · 관리자 이상 쓰기)
       saveFail: (id, rec) => db.collection('regfails').doc(id).set({ list: firebase.firestore.FieldValue.arrayUnion(strip(rec)), at: now() }, { merge: true }),
       getFails: id => db.collection('regfails').doc(id).get().then(s => (s.exists && s.data().list) || []),
