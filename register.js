@@ -354,7 +354,7 @@ window.SudoRegister = function (H) {
       <p class="fnext"><b>다음에 할 일</b> · ${esc(x.next)}</p>
       <details><summary>자세히 (오류 원문)</summary><code>${esc(`단계=${stageName(f.stage)}${f.part ? ` (${f.part} 묶음)` : ''} · ${f.secs}초 · ${f.pages}쪽${f.photo ? '(사진)' : ''} · ${f.mb}MB · ${f.model} · 시도 ${f.tries}번${f.split ? ' · 나눠 읽기' : ''}\n${f.msg}\n파일: ${(f.files || []).join(', ')}`)}</code>
         ${list.length > 1 ? `<ul>${list.slice(0, -1).reverse().slice(0, 4).map(y => `<li>${fmtAt(y.at)} · ${esc(stageName(y.stage))} · ${esc(explain(y).why)}</li>`).join('')}</ul>` : ''}</details>
-      <div class="frow">${x.split && !f.split && R.files.length ? '<button type="button" class="btn sm" id="runSplit">4쪽씩 나눠 읽기</button>' : ''}${isOwner() ? '<button type="button" class="btn ghost sm" id="failClear">기록 지우기</button>' : ''}</div></div>`;
+      <div class="fbtns">${x.split && !f.split && R.files.length ? '<button type="button" class="btn sm" id="runSplit">4쪽씩 나눠 읽기</button>' : ''}${isOwner() ? '<button type="button" class="btn ghost sm" id="failClear">기록 지우기</button>' : ''}</div></div>`;
   }
   // 같은 파일이 같은 이유로 2번 실패했으면 묻기 → 'split' | 'again' | null
   function askRepeat(list) {
@@ -576,7 +576,7 @@ window.SudoRegister = function (H) {
     }
     const st = mbState(), mbOk = (st === 'ok' || st === 'ask') && byId[d.id];
     return `<div class="pgbar"><b>시험지가 열려 있지 않습니다</b><small>문항 그림을 고치려면 필요합니다${st === 'ask' ? ' · MYBOX는 누르면 크롬이 폴더 읽기를 다시 물어봅니다' : ''}</small>
-      <span class="frow">${mbOk ? '<button type="button" class="btn sm" data-pgopen="mb">MYBOX에서 열기</button>' : ''}<button type="button" class="btn ${mbOk ? 'ghost ' : ''}sm" data-pgopen="pick">파일 고르기</button></span>
+      <span class="fbtns">${mbOk ? '<button type="button" class="btn sm" data-pgopen="mb">MYBOX에서 열기</button>' : ''}<button type="button" class="btn ${mbOk ? 'ghost ' : ''}sm" data-pgopen="pick">파일 고르기</button></span>
       ${names.length > 1 ? `<span class="dl">처음 읽은 파일 ${names.length}개(${esc(names.join(', '))})를 같은 순서로 엽니다</span>` : ''}</div>`;
   }
   // 문항 위치: 번호로 찾은 문항(초록) · 직접 찍거나 고친 문항(금색) · AI 짐작뿐인 문항(빨강)
@@ -1024,6 +1024,6 @@ window.SudoRegister = function (H) {
     busy: () => !!(R.busy || R.pre.running),
     openPre() { R.draft = null; local.set(null); R.tab = 'pre'; H.go('register'); render(); },
     // 자료실·학생 화면이 같이 쓰는 도우미
-    catalogLines, midsOf, typesOf, catIdx, courseOf, aiSettings: () => R.ai, modelLabel
+    catalogLines, midsOf, typesOf, catIdx, courseOf, aiSettings: () => R.ai, modelLabel, docFromAn, idOf
   };
 };

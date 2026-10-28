@@ -141,7 +141,8 @@
         school: me.role !== 'teacher', register: me.role !== 'teacher', library: me.role !== 'teacher', types: me.role !== 'teacher',
         members: me.role === 'owner' || me.role === 'co', grantCo: me.role === 'owner', remove: me.role === 'owner' || me.role === 'co',
         allStudents: me.role !== 'teacher', aiSettings: me.role === 'owner' || me.role === 'co',
-        fails: me.role === 'owner'   // 시험 등록 실패 기록은 원장님만
+        fails: me.role === 'owner',   // 시험 등록 실패 기록은 원장님만
+        editExam: me.role === 'owner'  // 시험 정보(학교·연도·학년·학기·시험) 고치기는 원장님만
       },
       // ---- 선생님 관리 ----
       listMembers: () => db.collection('members').get().then(s => s.docs.map(d => Object.assign({ email: d.id }, d.data()))),
@@ -177,6 +178,45 @@
         await b.commit();
       },
       saveImgs: putImgs,
+      // 시험 정보 고치기: from 시험을 to(새 이름표)로 옮긴다. 문항표·문항 그림·학생 점수를 함께 옮기고, 옛 것은 지운다
+      // info: {school, year, grade, sem, exam}, analysis: 새 이름표에 맞게 고친 문항표(저장 모양), keys: {옛 그림 이름: 새 그림 이름}
+      moveExam: async ({ from, to, info, analysis, keys, overwrite }, log) => {
+        log = log || (() => {});
+        const exRef = id => db.collection('exams').doc(id);
+        const [oldEx, newEx, oldAn] = await Promise.all([exRef(from).get(), exRef(to).get(), db.collection('analyses').doc(from).get()]);
+        if (!oldEx.exists) throw new Error('옮길 시험을 찾지 못했습니다');
+        const newAn = await db.collection('analyses').doc(to).get();
+        if (newAn.exists && !overwrite) throw new Error('바꾸려는 시험에 이미 문항표가 있습니다');
+        const o = oldEx.data(), n = newEx.exists ? newEx.data() : {};
+        const files = (n.files || []).concat((o.files || []).filter(f => !(n.files || []).some(x => x.path === f.path)));
+        const exDoc = Object.assign({}, o, n, info, { files, primary: n.primary || o.primary || '', hasPaper: !!(o.hasPaper || n.hasPaper), hasAnswer: !!(o.hasAnswer || n.hasAnswer),
+          notes: [...new Set((n.notes || []).concat(o.notes || []))], stats: n.stats || o.stats || null, movedFrom: from, movedAt: now() });
+        if (!exDoc.stats) delete exDoc.stats;
+        // 1. 문항 그림 복사
+        const ks = Object.keys(keys || {});
+        for (let k = 0; k < ks.length; k += 10) {
+          const part = ks.slice(k, k + 10);
+          const snaps = await Promise.all(part.map(x => db.collection('img').doc(x).get()));
+          const b = db.batch();
+          snaps.forEach((sn, i) => { if (sn.exists) { b.set(db.collection('img').doc(keys[part[i]]), sn.data()); IMG[keys[part[i]]] = sn.data().d; } });
+          await b.commit();
+          log(`문항 그림 ${Math.min(k + 10, ks.length)}/${ks.length}`);
+        }
+        // 2. 학생 점수
+        const res = await db.collection('results').where('exam', '==', from).get();
+        // 3. 새 시험·문항표 쓰고 옛 것 지우기 (한 번에)
+        const b = db.batch();
+        b.set(exRef(to), strip(exDoc));
+        b.set(db.collection('analyses').doc(to), strip(analysis));
+        res.docs.forEach(d => { const r = d.data(); b.set(db.collection('results').doc(`${r.student}_${to}`), Object.assign({}, r, { exam: to })); b.delete(d.ref); });
+        b.delete(db.collection('analyses').doc(from));
+        b.delete(exRef(from));
+        b.delete(db.collection('drafts').doc(from));
+        await b.commit();
+        db.collection('regfails').doc(from).delete().catch(() => {});
+        // 옛 그림은 지우지 않고 둔다 (이미 보낸 링크·되돌리기 대비)
+        return { results: res.size };
+      },
       // 시험 등록 실패 기록 (원장님만 읽기 · 관리자 이상 쓰기)
       saveFail: (id, rec) => db.collection('regfails').doc(id).set({ list: firebase.firestore.FieldValue.arrayUnion(strip(rec)), at: now() }, { merge: true }),
       getFails: id => db.collection('regfails').doc(id).get().then(s => (s.exists && s.data().list) || []),

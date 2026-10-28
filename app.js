@@ -252,7 +252,8 @@ window.startApp = function (D, ctx) {
     return `<div class="actbar"><a class="btn" href="#output" data-out="${esc(e.id)}" data-fmt="simple">분석지 보기</a>
       <a class="btn gold" href="#output" data-out="${esc(e.id)}" data-fmt="card">${MODE === 'phone' ? '카톡으로 보내기' : '카톡 카드 만들기'}</a>
       ${MODE === 'phone' ? '' : `<button type="button" class="btn ghost" data-edit="${esc(e.id)}">${e.an.status === 'ai' ? '지금 검수하기' : '문항표 고치기'}</button>`}
-      ${ctx && CAN.school ? `<button type="button" class="btn ghost" data-stats="${esc(e.id)}">학교 성적 자료${e.st ? ' ✓' : ''}</button>` : ''}</div>`;
+      ${ctx && CAN.school ? `<button type="button" class="btn ghost" data-stats="${esc(e.id)}">학교 성적 자료${e.st ? ' ✓' : ''}</button>` : ''}
+      ${ctx && CAN.editExam && MODE !== 'phone' ? `<button type="button" class="btn ghost" data-exinfo="${esc(e.id)}">시험 정보 고치기</button>` : ''}</div>`;
   }
   function bindCommon(root) {
     $$('[data-copy]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); copyText(b, b.dataset.copy); });
@@ -261,6 +262,74 @@ window.startApp = function (D, ctx) {
     $$('[data-edit]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); REG.editExam(b.dataset.edit); });
     $$('[data-draftopen]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); location.hash = '#register'; });
     $$('[data-stats]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); openStats(byId[b.dataset.stats]); });
+    $$('[data-exinfo]', root).forEach(b => b.onclick = ev => { ev.stopPropagation(); openExamInfo(byId[b.dataset.exinfo]); });
+  }
+  // ---------- 시험 정보 고치기 (원장님만): 학교·연도·학년·학기·시험을 바꾸고 문항표·그림·학생 점수를 함께 옮긴다 ----------
+  const nm = x => String(x || '').replace(/^\d+\.\s*/, '').replace(/\s+/g, '');
+  function moveAnalysis(e, info, to) {
+    const doc = REG.docFromAn(e.an), newCourse = `중등${info.grade}-${info.sem}`, keys = {};
+    let unmatched = 0, rematched = 0;
+    doc.items.forEach(it => {
+      if (it.ik && it.ik.startsWith(`e_${e.id}_`)) { const k = `e_${to}_${it.no}`; keys[it.ik] = k; it.ik = k; }
+      if (it.course !== newCourse) {
+        const t = nm(it.type), m = nm(it.mid);
+        const c = D.catalog.find(c => c[1] === newCourse && c[6] && nm(c[6]) === t && nm(c[4]) === m) || D.catalog.find(c => c[1] === newCourse && c[6] && nm(c[6]) === t)
+          || (t.length >= 4 ? D.catalog.find(c => c[1] === newCourse && c[6] && nm(c[4]) === m && (nm(c[6]).includes(t) || t.includes(nm(c[6])))) : null);
+        it.course = newCourse;
+        if (c) { Object.assign(it, { code: c[0], big: c[2], mid: `${c[3]}.${c[4]}`, type: `${c[5]}.${c[6]}` }); rematched++; }
+        else { it.code = ''; it.conf = Math.min(+it.conf || 0.6, 0.6); unmatched++; }
+      }
+    });
+    if (unmatched) doc.status = 'ai';
+    doc.source = Object.assign({}, doc.source || {}, { movedFrom: e.id, movedAt: new Date().toISOString() });
+    return { doc, keys, unmatched, rematched };
+  }
+  function openExamInfo(e) {
+    if (!e || !ctx || !ctx.moveExam) return;
+    const V = { school: e.s, year: e.y, grade: e.g, sem: e.t, exam: e.x };
+    const sh = $('#sheet');
+    const nRes = Object.values(D.results || {}).filter(r => r.exam === e.id).length;
+    const draw = () => {
+      const to = REG.idOf(V), same = to === e.id, tgt = byId[to];
+      const courseChange = +V.grade !== e.g || +V.sem !== e.t;
+      sh.innerHTML = `<div class="sheet-back" data-close></div><section class="statdlg" role="dialog" aria-modal="true" aria-labelledby="eiT">
+        <div class="head"><h2 id="eiT">시험 정보 고치기 <small>원장님만</small></h2><button type="button" class="linkbtn" data-close>닫기</button></div>
+        <p class="dl">지금: <b>${esc(e.s)} ${e.y} ${e.g}학년 ${e.t}학기 ${esc(e.x)}</b></p>
+        <div class="row2"><label class="sel"><span>학교</span><input id="eiS" list="eiSL" value="${esc(V.school)}"><datalist id="eiSL">${schools.map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+          <label class="sel"><span>연도</span><input id="eiY" type="number" min="2015" max="2040" value="${V.year}"></label></div>
+        <div class="row2"><label class="sel"><span>학년</span><select id="eiG">${[1, 2, 3].map(g => `<option value="${g}" ${g === +V.grade ? 'selected' : ''}>${g}학년</option>`).join('')}</select></label>
+          <label class="sel"><span>학기</span><select id="eiT2">${[1, 2].map(t => `<option value="${t}" ${t === +V.sem ? 'selected' : ''}>${t}학기</option>`).join('')}</select></label>
+          <label class="sel"><span>시험</span><select id="eiX">${['중간', '기말'].map(x => `<option ${x === V.exam ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+        ${same ? '<p class="dl">바꿀 정보를 골라 주세요.</p>' : `<p class="callout">바뀌는 것: <b>${esc(V.school)} ${V.year} ${V.grade}학년 ${V.sem}학기 ${esc(V.exam)}</b><br>
+          문항표 ${e.an.items.length}문항과 문항 그림${nRes ? `, 학생 점수 ${nRes}건` : ''}, MYBOX 원본 파일 연결을 함께 옮깁니다.
+          ${courseChange ? `<br>과정이 중등${e.g}-${e.t} → 중등${V.grade}-${V.sem}로 바뀝니다. 유형은 이름이 같은 것을 찾아 다시 연결하고, 못 찾은 문항은 ‘검수 전’으로 표시합니다.` : ''}
+          ${tgt ? `<br><b>보관함에 이미 이 시험이 있습니다.</b> 원본 파일을 합칩니다.${tgt.an ? ' 그 시험의 문항표는 지금 문항표로 바뀝니다.' : ''}` : ''}
+          <br>학부모님께 이미 보낸 분석지 링크는 그대로 열리지만, 적힌 학년은 예전 그대로입니다.</p>
+          ${tgt && tgt.an ? '<label class="chk"><input type="checkbox" id="eiOver"> 그 시험의 문항표를 지금 문항표로 바꿔도 됩니다</label>' : ''}`}
+        <p class="dl" id="eiLog"></p>
+        <div class="row2"><button type="button" class="btn" id="eiGo" ${same ? 'disabled' : ''}>바꾸기</button></div></section>`;
+      sh.hidden = false;
+      $$('[data-close]', sh).forEach(b => b.onclick = closeSheet);
+      const read = () => { V.school = $('#eiS').value.trim(); if (V.school && !/중$/.test(V.school)) V.school += '중'; V.year = +$('#eiY').value; V.grade = +$('#eiG').value; V.sem = +$('#eiT2').value; V.exam = $('#eiX').value; };
+      ['#eiS', '#eiY', '#eiG', '#eiT2', '#eiX'].forEach(q => { $(q, sh).onchange = () => { read(); draw(); }; });
+      const go = $('#eiGo'); if (go) go.onclick = async () => {
+        read(); const to = REG.idOf(V), tgt = byId[to];
+        if (!V.school || !V.year) { toast('학교와 연도를 넣어 주세요'); return; }
+        const over = $('#eiOver');
+        if (tgt && tgt.an && !(over && over.checked)) { toast('이미 있는 문항표를 바꿔도 되는지 체크해 주세요'); return; }
+        go.disabled = true; go.textContent = '옮기는 중…';
+        const log = t => { const l = $('#eiLog'); if (l) l.textContent = t; };
+        try {
+          const mv = moveAnalysis(e, V, to);
+          const info = { school: V.school, year: V.year, grade: V.grade, sem: V.sem, exam: V.exam, main: MAIN4.includes(V.school) };
+          const r = await ctx.moveExam({ from: e.id, to, info, analysis: mv.doc, keys: mv.keys, overwrite: !!(tgt && tgt.an) }, log);
+          log(`옮겼습니다 · 그림 ${Object.keys(mv.keys).length}개 · 학생 점수 ${r.results}건${mv.rematched ? ` · 유형 ${mv.rematched}개 다시 연결` : ''}${mv.unmatched ? ` · ${mv.unmatched}개는 검수에서 유형을 골라 주세요` : ''}. 화면을 새로 불러옵니다…`);
+          try { F.school = V.school; saveF(); } catch (_) {}
+          setTimeout(() => location.reload(), 2200);
+        } catch (err) { log('옮기지 못했습니다: ' + err.message); go.disabled = false; go.textContent = '바꾸기'; }
+      };
+    };
+    draw();
   }
 
   function renderArchive() {
