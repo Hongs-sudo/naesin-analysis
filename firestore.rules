@@ -24,6 +24,8 @@ service cloud.firestore {
     match /drafts/{id} { allow read, write: if isAdmin(); }
     match /similar/{id} { allow read, write: if isStaff(); }
     match /meta/{id} { allow read: if isStaff(); allow write: if isCo(); }
+    // 시험 등록 실패 기록: 관리자 이상이 남기고, 원장님만 보고 지움
+    match /regfails/{id} { allow read, delete: if isOwner(); allow create, update: if isAdmin(); }
 
     // 학생 · 시험 결과: 관리자 이상은 전체, 선생님은 자기가 등록한 학생만(owner)
     match /students/{id} {

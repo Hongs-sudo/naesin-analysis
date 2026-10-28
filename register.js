@@ -114,6 +114,8 @@ window.SudoRegister = function (H) {
     if (R.draft) return renderReview();
     if (R.tab === 'pre' && H.mode() !== 'phone') return renderPre();
     const ready = !!R.ai.url;
+    const curId = R.pick === 'archive' ? R.examId : (R.meta.school ? idOf(Object.assign({}, R.meta, { school: /중$/.test(R.meta.school) ? R.meta.school : R.meta.school + '중' })) : null);
+    if (curId && isOwner()) loadFails(curId);
     const drafts = Object.values(D.drafts).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     $('#main').innerHTML = `
       <div class="head"><div><div class="kicker">새 시험을 넣고 문항표를 채웁니다</div><h1>시험 등록</h1></div>${tabsHtml()}</div>
@@ -133,7 +135,7 @@ window.SudoRegister = function (H) {
             ${R.files.length ? `<div class="files">${R.files.map((f, i) => `<div class="file"><span class="ext">${esc(f.name.split('.').pop())}</span><span class="nm">${esc(f.name)}</span><span class="rl">${fmtSize(f.size)}</span><button type="button" class="copy" data-rm="${i}">빼기</button></div>`).join('')}</div>` : ''}
           </section>
           <section class="card"><h2>③ 문항표 채우기</h2>
-            ${R.busy ? `<div class="busybox"><span class="spin" aria-hidden="true"></span><div><b>${esc(R.busy.label)}</b><span id="busyT">${esc(R.busy.sub || '')}</span></div><button type="button" class="btn ghost sm" id="cancelAI">그만두기</button></div>` : `
+            ${R.busy ? `<div class="busybox"><span class="spin" aria-hidden="true"></span><div><b>${esc(R.busy.label)}</b>${stepsHtml(R.busy.stage)}<span id="busyT">${esc(R.busy.sub || '')}</span></div><button type="button" class="btn ghost sm" id="cancelAI">그만두기</button></div>` : `${failBox(curId)}
             <div class="fillrow">
               <label class="chk ansopt"><input type="checkbox" id="withAns" ${R.withAns ? 'checked' : ''}> 정답도 AI가 풀기 <small>답지가 없을 때 · 시간과 비용이 조금 더 듭니다</small></label>
               <button type="button" class="btn big" id="runAI" ${ready ? '' : 'disabled'}>AI로 문항표 채우기</button>
@@ -215,7 +217,14 @@ window.SudoRegister = function (H) {
     dp.ondragleave = () => dp.classList.remove('over');
     dp.ondrop = ev => { ev.preventDefault(); dp.classList.remove('over'); addFiles([...ev.dataTransfer.files]); };
     $$('[data-rm]').forEach(b => b.onclick = () => { R.files.splice(+b.dataset.rm, 1); render(); });
-    const ra = $('#runAI'); if (ra) ra.onclick = runAI;
+    const ra = $('#runAI'); if (ra) ra.onclick = () => runAI();
+    const rsp = $('#runSplit'); if (rsp) rsp.onclick = () => runAI({ split: true, confirmed: true });
+    const fc = $('#failClear'); if (fc) fc.onclick = async () => {
+      const m = currentMeta(); if (!m) return; const id = idOf(m);
+      failLocal.clear(id); R.fails[id] = []; R.lastFail = null;
+      if (ctx && ctx.clearFails) await ctx.clearFails(id).catch(() => {});
+      toast('실패 기록을 지웠습니다'); render();
+    };
     const rm = $('#runManual'); if (rm) rm.onclick = () => {
       const m = currentMeta(); if (!m) return;
       const n = Math.max(1, Math.min(40, +$('#nItems').value || 24));
@@ -266,37 +275,203 @@ window.SudoRegister = function (H) {
 
   // AI 사용 한도 (원장님 외 관리자는 한 달 기본 30건)
   async function quotaLeft() { try { return ctx && ctx.quota ? await ctx.quota() : { left: Infinity }; } catch (_) { return { left: Infinity }; } }
+
+  // ---------- 실패 기록: 왜 안 됐는지 남기고, 같은 실패를 되풀이하지 않게 ----------
+  // 기록은 이 컴퓨터(localStorage)와 서버(regfails, 원장님만 읽기)에 함께. 화면에 보이는 것은 원장님만, 방금 실패한 것은 누른 사람에게도.
+  const STAGES = [['open', '파일 열기'], ['img', '그림 바꾸기'], ['send', 'AI에 보내기'], ['wait', 'AI 답 기다리기'], ['parse', '결과 정리'], ['save', '저장']];
+  const stageName = k => (STAGES.find(x => x[0] === k) || [k, k])[1];
+  const isOwner = () => !!(ctx && ctx.can && ctx.can.fails);
+  const fileSig = files => files.map(f => `${f.name}:${f.size}`).sort().join('|');
+  const failLocal = {
+    all() { try { return JSON.parse(localStorage.getItem('sudo.regfails') || '{}'); } catch (_) { return {}; } },
+    get(id) { return this.all()[id] || []; },
+    put(id, rec) { try { const a = this.all(); a[id] = (a[id] || []).concat(rec).slice(-8); localStorage.setItem('sudo.regfails', JSON.stringify(a)); } catch (_) {} },
+    clear(id) { try { const a = this.all(); delete a[id]; localStorage.setItem('sudo.regfails', JSON.stringify(a)); } catch (_) {} }
+  };
+  R.fails = {};   // id → 기록 목록 (불러온 것)
+  async function getFails(id) {
+    let list = failLocal.get(id);
+    if (isOwner() && ctx.getFails) { try { const remote = await ctx.getFails(id); const seen = new Set(list.map(x => x.at)); list = list.concat(remote.filter(x => !seen.has(x.at))); } catch (_) {} }
+    list.sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+    // 마지막으로 성공한 뒤의 실패만
+    const k = list.map(x => !!x.ok).lastIndexOf(true);
+    return list.slice(k + 1);
+  }
+  function loadFails(id) {
+    if (!id || R.fails[id]) return;
+    R.fails[id] = [];
+    getFails(id).then(list => { R.fails[id] = list; if (!R.draft && !R.busy && (location.hash || '').startsWith('#register')) render(); });
+  }
+  function recordFail(id, rec) {
+    failLocal.put(id, rec);
+    R.fails[id] = (R.fails[id] || []).concat(rec);
+    if (ctx && ctx.saveFail) ctx.saveFail(id, rec).catch(() => {});
+  }
+  function recordOk(id) {
+    const rec = { ok: 1, at: now() };
+    failLocal.put(id, rec); R.fails[id] = [];
+    if (ctx && ctx.saveFail) ctx.saveFail(id, rec).catch(() => {});
+  }
+  // 오류 → 쉬운 말 이유 + 다음에 할 일
+  function explain(rec) {
+    const many = rec.pages > 4 && !rec.split, splitTip = many ? '‘4쪽씩 나눠 읽기’로 다시 하거나, ' : rec.split ? '이미 4쪽씩 나눠 읽었는데도 실패했습니다. 잠시 뒤 다시 하거나, ' : '';
+    switch (rec.code) {
+      case 'timeout': return { why: `AI가 ${rec.stage === 'send' ? '그림을 받은 뒤' : '답을 만들다'} 3분 동안 아무 답을 주지 않았습니다.${rec.photo ? ' 사진 시험지에 손글씨가 많아 읽는 데 오래 걸린 것으로 보입니다.' : ''}`, next: `${splitTip}학생 풀이가 없는 시험지(정리본·스캔)를 넣어 주세요.`, split: many };
+      case 'net': return { why: '인터넷 연결이 끊겼거나 중계 서버(Worker)에 닿지 못했습니다.', next: `인터넷 연결을 확인하고 다시 해 주세요. 같은 일이 되풀이되면 ${many ? '‘4쪽씩 나눠 읽기’를 써 주세요' : '잠시 뒤 다시 해 주세요'}.`, split: many };
+      case 'big': return { why: `보내는 그림이 너무 큽니다${rec.mb ? ` (${rec.mb}MB)` : ''}.`, next: `${rec.split ? '' : '‘4쪽씩 나눠 읽기’로 다시 해 주세요. '}정답·해설 파일은 빼고 시험지만 넣어도 됩니다.`, split: !rec.split };
+      case 'cut': return { why: '문항이 많아 AI의 답이 중간에 잘렸습니다.', next: rec.split ? '‘정답도 AI가 풀기’를 끄고 다시 해 주세요.' : '‘4쪽씩 나눠 읽기’로 다시 해 주세요.', split: !rec.split };
+      case 'empty': return { why: 'AI가 문항을 찾지 못하고 빈 결과를 돌려줬습니다.', next: rec.photo ? '사진이 기울었거나 흐릴 수 있습니다. 종이만 나오게 다시 찍거나 스캔본을 넣어 주세요.' : '시험지 파일이 맞는지(정답지만 넣지 않았는지) 확인해 주세요.', split: many };
+      case 'refuse': return { why: 'AI가 이 그림을 읽기를 거절했습니다.', next: '시험지가 아닌 그림이 섞이지 않았는지 확인해 주세요.' };
+      case 'busy': return { why: `AI 서버가 바빠서 받지 못했습니다${rec.status ? ` (응답 ${rec.status})` : ''}.`, next: '5~10분 뒤 다시 해 주세요.' };
+      case 'auth': return { why: 'AI 연결 권한 문제입니다 (키 또는 Worker 설정).', next: '오류 원문을 확인하고 Worker 설정을 점검해 주세요. 다시 눌러도 같은 결과가 나옵니다.' };
+      case 'credit': return { why: 'AI 크레딧이 부족합니다.', next: 'Anthropic 콘솔 Billing에서 충전한 뒤 다시 해 주세요.' };
+      case 'open': return { why: '파일을 열지 못했습니다.', next: 'PDF·JPG·PNG인지, 파일이 깨지지 않았는지 확인해 주세요. 한글 파일은 PDF로 저장해서 넣어 주세요.' };
+      case 'save': return { why: 'AI가 읽은 결과를 저장하지 못했습니다.', next: '인터넷 연결을 확인하고 다시 해 주세요. 결과는 이 컴퓨터에 임시로 남아 있을 수 있습니다.' };
+      default: return { why: 'AI가 오류를 돌려줬습니다.', next: '오류 원문을 확인해 주세요.', split: many };
+    }
+  }
+  function makeRec(e, ctxInfo) {
+    const code = (typeof e.code === 'string' && e.code) || (ctxInfo.stage === 'open' || ctxInfo.stage === 'img' ? 'open' : ctxInfo.stage === 'save' ? 'save' : 'http');
+    return { at: now(), stage: e.stage || ctxInfo.stage, code, msg: String(e.message || e).slice(0, 400), secs: Math.round((Date.now() - ctxInfo.t0) / 1000),
+      pages: ctxInfo.pages || 0, mb: e.mb ? Math.round(e.mb * 10) / 10 : (ctxInfo.mb || 0), model: ctxInfo.model || '', files: (ctxInfo.files || []).slice(0, 4), sig: ctxInfo.sig || '',
+      tries: e.tries || 1, split: !!ctxInfo.split, photo: !!ctxInfo.photo, part: ctxInfo.part || '', status: e.status || 0, by: (ctx && ctx.me && ctx.me.email) || '' };
+  }
+  const fmtAt = iso => { const d = new Date(iso); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+  function stepsHtml(cur, done) {
+    const i = STAGES.findIndex(x => x[0] === cur);
+    return `<div class="fsteps">${STAGES.map((x, k) => `<span class="${k < i ? 'ok' : k === i ? (done ? 'x' : 'now') : ''}">${x[1]}</span>`).join('')}</div>`;
+  }
+  // 실패 상자: 원장님은 저장된 기록 전체, 다른 분은 방금 실패한 것만
+  function failBox(id) {
+    const list = isOwner() ? (R.fails[id] || []).filter(x => !x.ok) : (R.lastFail && R.lastFail.id === id ? [R.lastFail.rec] : []);
+    if (!list.length) return '';
+    const f = list[list.length - 1], x = explain(f);
+    const same = list.filter(y => y.code === f.code && y.sig === f.sig).length;
+    return `<div class="failbox" role="alert">
+      <div class="fh"><b>지난번에 읽지 못했습니다</b><small>${fmtAt(f.at)}${same > 1 ? ` · ${same}번째 같은 이유` : ''}${f.by && isOwner() ? ` · ${esc(f.by.split('@')[0])}` : ''}</small></div>
+      ${stepsHtml(f.stage, true)}
+      <p><b>${esc(x.why)}</b></p>
+      <p class="fnext"><b>다음에 할 일</b> · ${esc(x.next)}</p>
+      <details><summary>자세히 (오류 원문)</summary><code>${esc(`단계=${stageName(f.stage)}${f.part ? ` (${f.part} 묶음)` : ''} · ${f.secs}초 · ${f.pages}쪽${f.photo ? '(사진)' : ''} · ${f.mb}MB · ${f.model} · 시도 ${f.tries}번${f.split ? ' · 나눠 읽기' : ''}\n${f.msg}\n파일: ${(f.files || []).join(', ')}`)}</code>
+        ${list.length > 1 ? `<ul>${list.slice(0, -1).reverse().slice(0, 4).map(y => `<li>${fmtAt(y.at)} · ${esc(stageName(y.stage))} · ${esc(explain(y).why)}</li>`).join('')}</ul>` : ''}</details>
+      <div class="frow">${x.split && !f.split && R.files.length ? '<button type="button" class="btn sm" id="runSplit">4쪽씩 나눠 읽기</button>' : ''}${isOwner() ? '<button type="button" class="btn ghost sm" id="failClear">기록 지우기</button>' : ''}</div></div>`;
+  }
+  // 같은 파일이 같은 이유로 2번 실패했으면 묻기 → 'split' | 'again' | null
+  function askRepeat(list) {
+    return new Promise(resolve => {
+      const f = list[list.length - 1], x = explain(f), sh = $('#sheet');
+      sh.innerHTML = `<div class="sheet-back" data-close></div><section class="statdlg" role="dialog" aria-modal="true" aria-labelledby="rpT">
+        <h2 id="rpT">이 파일은 같은 이유로 ${list.length}번 실패했습니다</h2>
+        <p class="dl">이유: ${esc(stageName(f.stage))}에서 — ${esc(x.why)} (${list.map(y => fmtAt(y.at).split(' ').pop()).join(', ')})</p>
+        <p>같은 방법으로 다시 하면 또 실패할 가능성이 큽니다. ${esc(x.next)}</p>
+        <div class="row2" style="justify-content:flex-end"><button type="button" class="btn ghost" data-r="">그만두기</button><button type="button" class="btn ghost danger" data-r="again">그래도 다시</button>${x.split && !list.every(y => y.split) ? '<button type="button" class="btn" data-r="split">권장: 4쪽씩 나눠 읽기</button>' : ''}</div></section>`;
+      sh.hidden = false;
+      const done = v => { sh.hidden = true; sh.innerHTML = ''; resolve(v); };
+      $$('[data-r]', sh).forEach(b => b.onclick = () => done(b.dataset.r || null));
+      $$('[data-close]', sh).forEach(b => b.onclick = () => done(null));
+    });
+  }
+  // 시험지 읽기: 사진 시험지이고 6쪽이 넘으면(또는 split) 4쪽씩 나눠 읽고 합친다
+  async function readExam({ settings, pages, meta, withAns, signal, split, onStage }) {
+    const course = courseOf(meta);
+    const groups = []; for (let k = 0; k < pages.length; k += split ? 4 : pages.length) groups.push(pages.slice(k, k + (split ? 4 : pages.length)));
+    const items = [], warnings = [], usage = { in: 0, out: 0 }; let total = 0;
+    for (let g = 0; g < groups.length; g++) {
+      const off = g * 4, part = groups.length > 1 ? `${g + 1}/${groups.length}` : '';
+      const note = groups.length > 1 ? `[나눠 읽기] 이번에 보내는 그림은 시험지 전체 ${pages.length}쪽 중 ${off + 1}~${off + groups[g].length}쪽입니다. 이 그림들에서 문항 번호가 보이는 문항만 돌려주세요 (번호가 앞 묶음에 있던 문항은 빼기). pg는 이번에 보낸 그림 순서(1부터)로 적습니다. 배점 합계가 100점이 되지 않아도 괜찮습니다.` : '';
+      let r;
+      try {
+        r = await window.SudoAI.analyze({ settings, getToken: ctx.getToken, pages: groups[g], meta: Object.assign({ course }, meta), catalogLines: catalogLines(course), example: exampleFor(meta), signal, withAns, note,
+          onStage: (s, info) => onStage && onStage(s, Object.assign({ part }, info)) });
+      } catch (e) { e.part = part; throw e; }
+      (r.result.items || []).forEach(it => { it.pg = +it.pg ? +it.pg + (groups.length > 1 ? off : 0) : 0; items.push(it); });
+      (r.result.warnings || []).forEach(w => warnings.push(part ? `[${part}] ${w}` : w));
+      if (r.result.total_pts) total = groups.length > 1 ? 0 : r.result.total_pts;
+      usage.in += r.usage.in; usage.out += r.usage.out;
+    }
+    // 같은 번호가 두 묶음에 나오면 확신도가 높은 것 하나만
+    const byNo = new Map();
+    items.forEach(it => { const k = `${it.essay ? 'e' : ''}${it.no}`, o = byNo.get(k); if (!o || (+it.conf || 0) > (+o.conf || 0)) byNo.set(k, it); });
+    const merged = [...byNo.values()];
+    if (groups.length > 1) warnings.unshift(`사진 시험지라 ${groups.length}번에 나눠 읽고 합쳤습니다. 문항 번호가 빠지거나 겹치지 않았는지 확인해 주세요`);
+    if (!merged.length) throw Object.assign(new Error('AI가 문항을 하나도 돌려주지 않았습니다'), { code: 'empty', stage: 'parse' });
+    return { result: { items: merged, warnings, total_pts: total || undefined }, usage };
+  }
   const useOne = () => { if (ctx && ctx.addUsage) ctx.addUsage(1); };
-  async function runAI() {
+  async function runAI(opt) {
+    opt = opt || {};
     const m = currentMeta(); if (!m) return;
     if (!R.files.length) { toast('시험지 파일을 먼저 넣어 주세요'); return; }
+    const id = idOf(m), sig = fileSig(R.files);
+    let split = !!opt.split;
+    if (!opt.confirmed) {
+      const prev = (await getFails(id)).filter(f => !f.ok && f.sig === sig);
+      const last = prev[prev.length - 1];
+      const same = last ? prev.filter(f => f.code === last.code && (!split || f.split)) : [];
+      if (same.length >= 2) { const ch = await askRepeat(same); if (!ch) return; if (ch === 'split') split = true; }
+    }
     const q = await quotaLeft(); if (q.left < 1) { toast(`이번 달 AI 사용 한도(${q.limit}건)를 다 썼습니다. 원장님께 한도를 늘려 달라고 요청해 주세요`); return; }
     const ctrl = new AbortController(), t0 = Date.now();
-    R.busy = { label: `${modelLabel()}가 시험지를 읽고 있습니다`, sub: '0초', ctrl };
+    const info = { t0, stage: 'open', files: R.files.map(f => f.name), sig, model: R.ai.model, split };
+    R.lastFail = null;
+    R.busy = { label: `${modelLabel()}가 시험지를 읽고 있습니다`, ctrl, t0, stage: 'open', chars: 0, lastAt: 0, note: '' };
     render();
-    const tick = setInterval(() => { const el = $('#busyT'); if (el) el.textContent = `${Math.round((Date.now() - t0) / 1000)}초 · 창을 닫지 말아 주세요`; }, 1000);
+    const tick = setInterval(paintBusy, 1000);
+    const setStage = (st, extra) => { info.stage = st; Object.assign(R.busy || {}, { stage: st }, extra || {}); paintBusy(true); };
     try {
       const course = courseOf(m);
-      R.busy.label = '시험지를 그림으로 바꾸는 중'; render();
-      const pages = await window.SudoPages.load(R.files);
-      R.busy.label = `${modelLabel()}가 시험지 ${pages.length}쪽을 읽고 있습니다`; render();
-      const { result, usage } = await window.SudoAI.analyze({ settings: R.ai, getToken: ctx.getToken, pages, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), signal: ctrl.signal, withAns: R.withAns });
-      const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), usage, secs: Math.round((Date.now() - t0) / 1000), withAns: R.withAns }, rowsFromAI(result, course));
+      setStage('img', { label: '시험지를 그림으로 바꾸는 중' });
+      let pages;
+      try { pages = await window.SudoPages.load(R.files); } catch (e) { info.stage = /열지 못했|읽을 수 있습니다|Invalid|PDF/.test(e.message) ? 'open' : 'img'; throw Object.assign(new Error(e.message || String(e)), { code: 'open' }); }
+      info.pages = pages.length; info.photo = pages.some(p => p.photo);
+      if (info.photo && pages.length > 6) split = true;
+      info.split = split;
+      setStage('send', { label: `${modelLabel()}가 시험지 ${pages.length}쪽을 읽고 있습니다${info.photo ? ' (사진 · 종이만 잘라 보냄)' : ''}`, note: split ? '4쪽씩 나눠 읽습니다' : '' });
+      const { result, usage } = await readExam({ settings: R.ai, pages, meta: m, withAns: R.withAns, signal: ctrl.signal, split,
+        onStage: (st, x) => {
+          if (st === 'retry') { setStage('send', { note: `다시 보내는 중 (${x.why || '연결 문제'})${x.part ? ` · ${x.part} 묶음` : ''}` }); return; }
+          if (x.part) info.part = x.part;
+          setStage(st, { chars: x.chars || 0, lastAt: Date.now(), part: x.part || '', note: split ? `4쪽씩 나눠 읽는 중${x.part ? ` · ${x.part} 묶음` : ''}` : '' });
+        } });
+      setStage('parse');
+      const d = newDraft(m, { kind: 'ai', provider: R.ai.provider, model: R.ai.model, at: now(), files: R.files.map(f => f.name), nPages: pages.length, photo: info.photo || undefined, split: split || undefined, usage, secs: Math.round((Date.now() - t0) / 1000), withAns: R.withAns }, rowsFromAI(result, course));
       d.warnings = result.warnings || [];
       if (result.total_pts) d.warnings.unshift(`시험지에 적힌 배점 합계: ${result.total_pts}점`);
       const snapped = window.SudoPages.snap(d.rows, pages, 0, { aiEnds: true });
       const nMiss = d.rows.length - snapped;
       d.warnings.push(`문항 영역: ${d.rows.length}문항 중 ${snapped}개를 번호 위치로 맞췄습니다${nMiss > 0 ? ` · ${nMiss}개는 아래 ‘문항 위치’에서 번호 찍기로 채워 주세요` : ''}`);
       const imgs = cropRows(d.rows, pages, d.id);
+      setStage('save');
       R.files = []; R.pages = pages;
       try { if (ctx) await ctx.saveImgs(imgs); } catch (_) { d.warnings.push('문항 그림 일부를 저장하지 못했습니다. 저장할 때 다시 시도합니다'); d.pendingImgs = 1; }
       useOne();
       try { await saveDraftRemote(d); } catch (_) {}
+      recordOk(id);
+      clearInterval(tick); R.busy = null;
       openDraft(d, true);
     } catch (e) {
-      toast(e.name === 'AbortError' ? '그만두었습니다' : '읽지 못했습니다: ' + e.message);
-      R.busy = null; render();
-    } finally { clearInterval(tick); R.busy = null; }
+      clearInterval(tick); R.busy = null;
+      if (e.name === 'AbortError' && ctrl.signal.aborted) { toast('그만두었습니다'); render(); return; }
+      if (e.part) info.part = e.part;
+      const rec = makeRec(e, info);
+      recordFail(id, rec);
+      R.lastFail = { id, rec };
+      toast('읽지 못했습니다. ③ 아래에 이유를 남겼습니다');
+      render();
+      const fb = $('.failbox'); if (fb) fb.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } finally { clearInterval(tick); }
+  }
+  // 읽는 동안 화면: 단계 · 받은 글자 수 · 마지막 응답
+  function paintBusy(full) {
+    const b = R.busy; if (!b) return;
+    if (full) { const bx = $('.busybox'); if (bx) { const t = $('b', bx); if (t) t.textContent = b.label; const st = $('.fsteps', bx); if (st) st.outerHTML = stepsHtml(b.stage); } }
+    const el = $('#busyT'); if (!el) return;
+    const secs = Math.round((Date.now() - b.t0) / 1000), mm = secs >= 60 ? `${Math.floor(secs / 60)}분 ${secs % 60}초` : `${secs}초`;
+    const parts = [mm];
+    if (b.stage === 'wait') parts.push(b.chars ? `답 받는 중 · ${b.chars.toLocaleString()}자` : 'AI가 읽는 중', b.lastAt ? `마지막 응답 ${Math.round((Date.now() - b.lastAt) / 1000)}초 전` : '');
+    if (b.note) parts.push(b.note);
+    parts.push('창을 닫지 말아 주세요');
+    el.textContent = parts.filter(Boolean).join(' · ');
   }
   async function saveDraftRemote(d) {
     d.updatedAt = now();
@@ -333,13 +508,76 @@ window.SudoRegister = function (H) {
         <label class="kpi sel"><span>시험 난이도</span><select id="rvLevel"><option value="">고르기</option>${LEVELS.map(l => `<option ${l === d.level ? 'selected' : ''}>${l}</option>`).join('')}</select><small>제안: ${suggestLevel(rows)} (실력·심화 배점 기준)</small></label>
       </div>
       ${d.warnings && d.warnings.length ? `<div class="callout">${d.warnings.map(w => esc(w)).join('<br>')}</div>` : ''}
+      ${pagesBar(d)}
       ${locCard(rows)}
       <section class="card cuts"><div class="head"><h2>학교 성적 자료 <small>선택 · 학교알리미 학기 자료나 학교 발표 평균·A~E 비율</small></h2>${byId[d.id] ? `<button type="button" class="btn ghost sm" id="rvStats">${byId[d.id].st ? '고치기 ✓' : '넣기'}</button>` : '<span class="dl">새 시험은 저장한 뒤 보관함에서 넣을 수 있습니다</span>'}</div></section>
       <div class="tablewrap rvwrap"><table class="rvtbl">
         <thead><tr><th>그림</th><th>번호</th><th>배점</th><th>난이도</th><th>행동</th><th>중단원</th><th>유형 · 지난 출제</th><th>서답</th>${showAns ? '<th>정답</th>' : ''}<th>확인</th><th></th></tr></thead>
         <tbody>${rows.map((r, i) => rowHtml(r, i, course, mids, d.id, showAns)).join('')}</tbody></table></div>
-      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${R.pages ? '' : `<label class="btn ghost sm" for="rvPages">시험지 파일 다시 열기 <small>문항 영역 고칠 때</small></label><input type="file" id="rvPages" accept="${ACCEPT}" multiple hidden>`}${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
+      <div class="rvfoot"><button type="button" class="btn ghost sm" id="rvAdd">문항 추가</button>${showAns ? '<button type="button" class="btn ghost sm" id="rvAns">정답표 복사</button>' : '<button type="button" class="btn ghost sm" id="rvAnsOn">정답 칸 열기</button>'}<span class="dl">새 유형은 저장할 때 단원·유형 목록에 함께 들어갑니다.</span></div>`;
     bindReview();
+  }
+  // ---------- 검수 화면에서 시험지 열기 ----------
+  // 처음 AI가 읽은 파일 목록(source.files) 순서대로 열어야 저장된 '몇 쪽'이 맞는다
+  function srcNames(d) { return ((d.source && d.source.files) || []).map(n => String(n).split('/').pop()); }
+  function mbState() { const mb = window.__mybox; return mb ? mb.state().state : 'none'; }
+  async function mbFilesFor(d) {
+    const mb = window.__mybox, e = byId[d.id]; if (!mb || !e) return null;
+    let st = mb.state().state;
+    if (st === 'ask') { await mb.reconnect(); st = mb.state().state; }
+    if (st !== 'ok') return null;
+    for (let k = 0; k < 60 && !mb.ready(); k++) await new Promise(r => setTimeout(r, 250));   // 폴더 훑기 기다리기 (최대 15초)
+    if (!mb.ready()) return null;
+    const names = srcNames(d);
+    const byName = n => e.fl.find(f => f[0].split('/').pop() === n);
+    let list = names.map(byName).filter(Boolean).map(f => mb.fileOf('exam', f[0])).filter(Boolean);
+    if (!list.length || list.length < names.length) { const one = mbExamFile(d.id, d); if (one && !list.includes(one)) list = list.length ? list : [one]; }
+    return list.length ? list : null;
+  }
+  function pickFiles() {
+    return new Promise(resolve => {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = ACCEPT; inp.hidden = true;
+      document.body.appendChild(inp);
+      const done = v => { inp.remove(); resolve(v); };
+      inp.onchange = () => done(inp.files && inp.files.length ? [...inp.files] : null);
+      inp.addEventListener('cancel', () => done(null));
+      inp.click();
+    });
+  }
+  // how: '' 알아서(MYBOX → 파일 고르기) · 'mb' · 'pick'
+  async function ensurePages(d, how) {
+    if (R.pages && !how) return true;
+    let files = null, from = '';
+    try {
+      if (how !== 'pick') { files = await mbFilesFor(d); from = 'MYBOX'; }
+      if (!files) {
+        if (how === 'mb') { toast('MYBOX에서 이 시험지를 찾지 못했습니다. ‘파일 고르기’로 열어 주세요'); return false; }
+        toast(srcNames(d).length > 1 ? `처음 읽은 파일 ${srcNames(d).length}개를 모두 골라 주세요` : '시험지 파일을 골라 주세요');
+        files = await pickFiles(); from = '';
+        if (!files) return false;
+        const names = srcNames(d);   // 처음 읽은 순서대로 정렬
+        files.sort((a, b) => ((names.indexOf(a.name) + 1) || 99) - ((names.indexOf(b.name) + 1) || 99));
+      }
+      toast(`시험지를 여는 중… ${files.map(f => f.name).join(', ')}`);
+      R.pages = await window.SudoPages.load(files);
+      R.pagesFrom = from;
+      toast(`${from ? from + '에서 ' : ''}${R.pages.length}쪽을 열었습니다`);
+      renderReview();
+      return true;
+    } catch (e) { toast('시험지를 열지 못했습니다: ' + e.message); return false; }
+  }
+  function pagesBar(d) {
+    const names = srcNames(d);
+    if (R.pages) {
+      const opened = [...new Set(R.pages.map(p => p.file))], n0 = d.source && d.source.nPages;
+      const maxPg = d.rows.reduce((m, r) => Math.max(m, +r.pg || 0), 0);
+      const off = n0 && n0 !== R.pages.length ? `처음 읽을 때 ${n0}쪽, 지금 ${R.pages.length}쪽 — 위치가 어긋날 수 있습니다` : maxPg > R.pages.length ? `문항 위치가 ${maxPg}쪽까지 있는데 지금 ${R.pages.length}쪽만 열렸습니다 — 처음 읽은 파일을 모두 열어 주세요` : '';
+      return `<div class="pgbar ${off ? 'warn' : 'ok'}"><b>시험지 ${R.pages.length}쪽 열림</b><small>${esc(opened.join(' + '))}${off ? '' : n0 ? ' · 처음 읽을 때와 같음' : ''}</small>${off ? `<span class="pgwarn">${esc(off)}</span><button type="button" class="btn ghost sm" data-pgopen="pick">다른 파일로 다시 열기</button>` : ''}</div>`;
+    }
+    const st = mbState(), mbOk = (st === 'ok' || st === 'ask') && byId[d.id];
+    return `<div class="pgbar"><b>시험지가 열려 있지 않습니다</b><small>문항 그림을 고치려면 필요합니다${st === 'ask' ? ' · MYBOX는 누르면 크롬이 폴더 읽기를 다시 물어봅니다' : ''}</small>
+      <span class="frow">${mbOk ? '<button type="button" class="btn sm" data-pgopen="mb">MYBOX에서 열기</button>' : ''}<button type="button" class="btn ${mbOk ? 'ghost ' : ''}sm" data-pgopen="pick">파일 고르기</button></span>
+      ${names.length > 1 ? `<span class="dl">처음 읽은 파일 ${names.length}개(${esc(names.join(', '))})를 같은 순서로 엽니다</span>` : ''}</div>`;
   }
   // 문항 위치: 번호로 찾은 문항(초록) · 직접 찍거나 고친 문항(금색) · AI 짐작뿐인 문항(빨강)
   const FOUND = ['text', 'num'], HAND = ['pin', 'manual'];
@@ -350,7 +588,7 @@ window.SudoRegister = function (H) {
     const nNoEnd = rows.filter(r => locOf(r) !== 'miss' && r.boxSrc !== 'manual' && !r.essay && !r.be).length;
     return `<section class="card locbar" aria-label="문항 위치 확인"><div class="head"><h2>문항 위치 <small>${rows.length}문항 중 ${nOk}개 번호로 찾음${nHand ? ` · ${nHand}개 직접` : ''}${nMiss ? ` · <b class="goldt">${nMiss}개 못 찾음</b>` : ''}</small></h2>
       <div class="row2">${R.pages ? `<button type="button" class="btn ghost sm" id="rvSnap">번호 기준으로 다시 잡기</button><button type="button" class="btn sm" id="rvPin" ${nMiss ? '' : 'disabled'}>${nMiss ? `번호 찍기로 ${nMiss}개 채우기` : '모두 찾음'}</button>`
-        : `${mbExamFile(R.draft.id, R.draft) ? '<button type="button" class="btn sm" id="rvMb">MYBOX에서 시험지 열기</button>' : ''}<label class="btn ghost sm" for="rvPages2">시험지 파일 열기 <small>번호 확인·찍기</small></label><input type="file" id="rvPages2" accept="${ACCEPT}" multiple hidden>`}</div></div>
+        : '<button type="button" class="btn sm" data-pgopen>시험지 열기 <small>번호 확인·찍기</small></button>'}</div></div>
       <div class="locchips">${list.map(r => { const noEnd = locOf(r) !== 'miss' && r.boxSrc !== 'manual' && !r.essay && !r.be; return `<button type="button" class="${locOf(r) === 'ok' ? '' : locOf(r)} ${noEnd ? 'noend' : ''}" data-loc="${rows.indexOf(r)}" title="${r.no}번 · ${{ text: 'PDF 글자로 번호 찾음', num: '그림에서 번호 찾음', pin: '번호 직접 찍음', manual: '영역 직접 고침' }[r.boxSrc] || 'AI 짐작 (번호를 못 찾음)'}${noEnd ? ' · 보기 ⑤를 못 찾아 다음 번호 바로 위까지' : ''}">${r.essay ? '서' : ''}${r.no}</button>`; }).join('')}</div>
       <div class="loclegend"><span><i></i>번호로 찾음</span><span><i class="hand"></i>직접 찍음·고침</span><span><i class="miss"></i>못 찾음 (AI 짐작) · 누르면 영역을 고칠 수 있습니다</span>${nNoEnd ? `<span><i class="noend"></i>끝(보기 ⑤)을 못 찾아 다음 번호 바로 위까지 잡음 ${nNoEnd}개</span>` : ''}</div></section>`;
   }
@@ -361,7 +599,7 @@ window.SudoRegister = function (H) {
     const midOpts = mids.map(x => `<option value="${esc(x.mid)}" ${x.mid === r.mid ? 'selected' : ''}>${esc(x.mid)}${x.isNew ? ' (새)' : ''}</option>`).join('');
     const typeSel = `<select data-k="code" aria-label="${r.no}번 유형"><option value="">${r.mid ? '고르기' : '중단원 먼저'}</option>${types.map(([c]) => `<option value="${esc(c[0])}" ${c[0] === r.code ? 'selected' : ''}>${esc(c[5])}.${esc(c[6] || '(이름 없음)')}</option>`).join('')}<option value="__new" ${!known && (r.type || r.mid) && !r.code ? 'selected' : ''}>＋ 새 유형</option></select>`;
     const newIn = !known && !r.code && (r.type || r.mid) ? `<input data-k="type" value="${esc(String(r.type).replace(/^\d+\.\s*/, ''))}" placeholder="새 유형 이름">` : '';
- const thumb = `<td class="thc">${r.ik ? `<button type="button" class="thumb" data-zoom title="크게 보기"><img data-ik="${esc(r.ik)}" alt="${r.no}번 문항 그림"></button>` : '<span class="dl">없음</span>'}${R.pages ? `<button type="button" class="linkbtn" data-rebox>영역 ${r.ik ? '고치기' : '잡기'}</button>` : ''}</td>`;
+ const thumb = `<td class="thc">${r.ik ? `<button type="button" class="thumb" data-zoom title="크게 보기"><img data-ik="${esc(r.ik)}" alt="${r.no}번 문항 그림"></button>` : '<span class="dl">없음</span>'}<button type="button" class="linkbtn" data-rebox>영역 ${r.ik ? '고치기' : '잡기'}</button></td>`;
     return `<tr data-i="${i}" class="${r.ok ? '' : 'need'}">${thumb}
       <td><input data-k="no" type="number" min="1" value="${r.no}" class="w3"></td>
       <td><input data-k="pts" type="number" step="0.1" min="0" value="${r.pts}" class="w4 ${r.pts === '' ? 'miss' : ''}"></td>
@@ -378,7 +616,7 @@ window.SudoRegister = function (H) {
   function bindReview() {
     const d = R.draft;
     $('#rvBack').onclick = () => { if (confirmLeave()) closeDraft(); };
-    $('#rvTemp').onclick = async ev => { ev.currentTarget.disabled = true; try { await saveDraftRemote(d); toast('임시 저장했습니다. 검수 대기에서 이어서 볼 수 있습니다'); } catch (e) { toast('저장하지 못했습니다: ' + e.message); } ev.currentTarget.disabled = false; };
+    $('#rvTemp').onclick = async ev => { const bt = ev.currentTarget; bt.disabled = true; try { await saveDraftRemote(d); toast('임시 저장했습니다. 검수 대기에서 이어서 볼 수 있습니다'); } catch (e) { toast('저장하지 못했습니다: ' + e.message); } bt.disabled = false; };
     $('#rvSave').onclick = ev => saveFinal(ev.currentTarget);
     $('#rvLevel').onchange = ev => { d.level = ev.target.value; touch(); };
     const rs = $('#rvStats'); if (rs) rs.onclick = () => H.openStats(byId[d.id], () => renderReview());
@@ -387,10 +625,6 @@ window.SudoRegister = function (H) {
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('정답표를 복사했습니다'), () => toast('복사하지 못했습니다'));
     };
     const ro = $('#rvAnsOn'); if (ro) ro.onclick = () => { d.showAns = true; touch(true); };
-    const rp = $('#rvPages'); if (rp) rp.onchange = async () => {
-      try { toast('시험지를 여는 중…'); R.pages = await window.SudoPages.load([...rp.files]); toast(`${R.pages.length}쪽을 열었습니다. ‘영역 고치기’를 누르세요`); renderReview(); }
-      catch (e) { toast(e.message); }
-    };
     loadThumbs();
     const saveCrops = async list => {
       const imgs = cropRows(list, R.pages, d.id);
@@ -417,20 +651,11 @@ window.SudoRegister = function (H) {
       await saveCrops(d.rows.filter(r => pgs.includes(r.pg) && (FOUND.includes(r.boxSrc) || r.boxSrc === 'pin')));
       touch(true); toast(`${got.length}문항의 번호를 찍어 영역을 만들었습니다`);
     };
-    const rp2 = $('#rvPages2'); if (rp2) rp2.onchange = async () => {
-      try { toast('시험지를 여는 중…'); R.pages = await window.SudoPages.load([...rp2.files]); toast(`${R.pages.length}쪽을 열었습니다. ‘번호 기준으로 다시 잡기’를 누르세요`); renderReview(); }
-      catch (e) { toast(e.message); }
-    };
-    const rm = $('#rvMb'); if (rm) rm.onclick = async () => {
-      const f = mbExamFile(d.id, d); if (!f) return;
-      rm.disabled = true; rm.textContent = '여는 중…';
-      try { R.pages = await window.SudoPages.load([f]); toast(`MYBOX에서 ${f.name} ${R.pages.length}쪽을 열었습니다`); renderReview(); }
-      catch (e) { toast(e.message); rm.disabled = false; }
-    };
+    $$('[data-pgopen]').forEach(b => b.onclick = () => ensurePages(d, b.dataset.pgopen || ''));
     $$('[data-loc]').forEach(b => b.onclick = () => {
       const tr = document.querySelector(`.rvtbl tbody tr[data-i="${b.dataset.loc}"]`); if (!tr) return;
       const rb = $('[data-rebox]', tr);
-      if (rb) rb.click(); else { tr.scrollIntoView({ block: 'center' }); toast('영역을 고치려면 먼저 시험지 파일을 열어 주세요'); }
+      if (rb) { tr.scrollIntoView({ block: 'center' }); rb.click(); }
     });
     $('#rvAdd').onclick = () => { d.rows.push(emptyRow((d.rows.reduce((m, r) => Math.max(m, +r.no || 0), 0)) + 1)); touch(true); };
     $$('.rvtbl tbody tr').forEach(tr => {
@@ -467,6 +692,7 @@ window.SudoRegister = function (H) {
       $('[data-del]', tr).onclick = () => { d.rows.splice(+tr.dataset.i, 1); touch(true); };
       const zb = $('[data-zoom]', tr); if (zb) zb.onclick = () => window.SudoPages.zoom($('img', zb).src, `${r.no}번 문항`);
       const rb = $('[data-rebox]', tr); if (rb) rb.onclick = async () => {
+        if (!R.pages && !(await ensurePages(d))) return;
         const others = d.rows.filter(o => o !== r && o.box).map(o => ({ pg: o.pg, box: o.box, label: o.no }));
         const res = await window.SudoPages.pickBox(R.pages, r.pg || 1, r.box, others); if (!res) return;
         r.pg = res.pg; r.box = res.box; r.boxSrc = 'manual';
@@ -651,7 +877,7 @@ window.SudoRegister = function (H) {
           <div class="pcnt"><span><b>${st.done}</b> 완료(검수 전)</span><span><b>${st.run}</b> 읽는 중</span><span><b class="goldt">${st.fail}</b> 다시 필요</span><span><b>${st.wait}</b> 대기</span></div>
           <p class="dl tip">이 창을 닫으면 지금 읽는 것까지만 끝나고 멈춥니다. 다시 열어 폴더를 고르고 시작하면 남은 시험부터 이어서 합니다.</p>
           ${P.usage.n ? `<p class="dl">사용량: ${P.usage.n}건 · 입력 ${Math.round(P.usage.in / 1000)}천 · 출력 ${Math.round(P.usage.out / 1000)}천 토큰 (한 건 평균 입력 ${Math.round(P.usage.in / P.usage.n / 1000)}천 · 출력 ${Math.round(P.usage.out / P.usage.n / 1000)}천). 정확한 금액은 Claude 콘솔 Usage에서 확인하세요.</p>` : ''}
-          <div class="jlist">${P.list.map(j => `<div class="job" data-jid="${esc(j.e.id)}"><span><b>${esc(j.e.s)}</b> ${j.e.y} · ${j.e.g}학년 ${j.e.t}학기 ${esc(j.e.x)}${j.kind === 'fill' ? ' <small>그림 채우기</small>' : j.kind === 'snap' ? ' <small>영역 다시 잡기</small>' : ''}</span><span class="dl">${esc(j.msg || '')}</span><span class="jst ${j.st}">${{ done: j.kind === 'fill' ? '그림 완료' : j.kind === 'snap' ? '다시 잡음' : '검수 전', run: j.kind === 'snap' ? '찾는 중' : '읽는 중', fail: '다시 필요', wait: '대기' }[j.st]}</span></div>`).join('')}</div>`
+          <div class="jlist">${P.list.map(j => `<div class="job" data-jid="${esc(j.e.id)}"><span><b>${esc(j.e.s)}</b> ${j.e.y} · ${j.e.g}학년 ${j.e.t}학기 ${esc(j.e.x)}${j.kind === 'fill' ? ' <small>그림 채우기</small>' : j.kind === 'snap' ? ' <small>영역 다시 잡기</small>' : ''}</span><span class="dl">${esc(j.msg || '')}${j.st === 'fail' && j.more ? `<details class="jmore"><summary>펼쳐 보기</summary>${esc(j.more).replace(/\n/g, '<br>')}</details>` : ''}</span><span class="jst ${j.st}">${{ done: j.kind === 'fill' ? '그림 완료' : j.kind === 'snap' ? '다시 잡음' : '검수 전', run: j.kind === 'snap' ? '찾는 중' : '읽는 중', fail: '다시 필요', wait: '대기' }[j.st]}</span></div>`).join('')}</div>`
           : '<div class="empty">왼쪽에서 연도·학교를 고르고 ‘먼저 3건 시험해 보기’를 누르면 여기에 진행 상황이 나옵니다. 3건을 먼저 돌려 시간·사용량을 보고 모델을 정하세요.</div>'}
         </section></div>`;
     bindPre();
@@ -726,14 +952,22 @@ window.SudoRegister = function (H) {
       while (!P.stop && next < list.length) {
         const j = list[next++], t0 = Date.now();
         j.st = 'run'; j.msg = '쪽 여는 중'; prePaint();
-        const tick = setInterval(() => { if (j.final) return; j.msg = `${Math.round((Date.now() - t0) / 1000)}초째`; const el = document.querySelector(`.job[data-jid="${CSS.escape(j.e.id)}"] .dl`); if (el) el.textContent = j.msg; }, 5000);
+        const info = { t0, stage: 'open', model: settings.model };
+        const tick = setInterval(() => { if (j.final) return; j.msg = `${Math.round((Date.now() - t0) / 1000)}초째 · ${stageName(info.stage)}`; const el = document.querySelector(`.job[data-jid="${CSS.escape(j.e.id)}"] .dl`); if (el) el.textContent = j.msg; }, 5000);
         try {
-          const files = filesFor(j.e); if (!files) throw new Error('파일을 찾지 못함');
-          const pages = await window.SudoPages.load(files, { maxPages: 16 });
-          j.msg = `${pages.length}쪽 읽는 중`; prePaint();
+          const files = filesFor(j.e); if (!files) throw Object.assign(new Error('MYBOX에서 파일을 찾지 못함'), { code: 'open' });
+          info.files = files.map(f => f.name); info.sig = fileSig(files);
+          info.stage = 'img';
+          let pages;
+          try { pages = await window.SudoPages.load(files, { maxPages: 16 }); } catch (e) { throw Object.assign(new Error(e.message || String(e)), { code: 'open' }); }
+          info.pages = pages.length; info.photo = pages.some(p => p.photo);
+          const split = info.photo && pages.length > 6; info.split = split;
+          j.msg = `${pages.length}쪽 읽는 중${split ? ' (사진 · 4쪽씩 나눠 읽기)' : ''}`; prePaint();
           const m = metaOf(j.e), course = courseOf(m);
           const withAns = j.kind === 'an' && P.withAns && !j.e.a;
-          const { result, usage } = await window.SudoAI.analyze({ settings, getToken: ctx.getToken, pages, meta: Object.assign({ course }, m), catalogLines: catalogLines(course), example: exampleFor(m), withAns });
+          info.stage = 'send';
+          const { result, usage } = await readExam({ settings, pages, meta: m, withAns, split, onStage: st => { if (st !== 'retry') info.stage = st; } });
+          info.stage = 'save';
           P.usage.in += usage.in; P.usage.out += usage.out; P.usage.n++;
           const rows = rowsFromAI(result, course);
           window.SudoPages.snap(rows, pages, 0, { aiEnds: true });
@@ -763,7 +997,14 @@ window.SudoRegister = function (H) {
           useOne();
           H.applySaved({ id: j.e.id, analysis });
           j.st = 'done'; j.secs = secs;
-        } catch (e) { j.final = true; j.st = 'fail'; j.msg = String(e.message || e).slice(0, 60); }
+          if (j.kind === 'an') recordOk(j.e.id);
+        } catch (e) {
+          j.final = true; j.st = 'fail';
+          if (e.part) info.part = e.part;
+          const rec = makeRec(e, info), x = explain(rec);
+          recordFail(j.e.id, rec);
+          j.msg = `${stageName(rec.stage)} · ${x.why}`; j.more = `${x.next}\n${rec.msg}`;
+        }
         clearInterval(tick);
         prePaint();
       }

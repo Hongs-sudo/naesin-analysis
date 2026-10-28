@@ -140,7 +140,8 @@
       can: {
         school: me.role !== 'teacher', register: me.role !== 'teacher', library: me.role !== 'teacher', types: me.role !== 'teacher',
         members: me.role === 'owner' || me.role === 'co', grantCo: me.role === 'owner', remove: me.role === 'owner' || me.role === 'co',
-        allStudents: me.role !== 'teacher', aiSettings: me.role === 'owner' || me.role === 'co'
+        allStudents: me.role !== 'teacher', aiSettings: me.role === 'owner' || me.role === 'co',
+        fails: me.role === 'owner'   // 시험 등록 실패 기록은 원장님만
       },
       // ---- 선생님 관리 ----
       listMembers: () => db.collection('members').get().then(s => s.docs.map(d => Object.assign({ email: d.id }, d.data()))),
@@ -176,6 +177,10 @@
         await b.commit();
       },
       saveImgs: putImgs,
+      // 시험 등록 실패 기록 (원장님만 읽기 · 관리자 이상 쓰기)
+      saveFail: (id, rec) => db.collection('regfails').doc(id).set({ list: firebase.firestore.FieldValue.arrayUnion(strip(rec)), at: now() }, { merge: true }),
+      getFails: id => db.collection('regfails').doc(id).get().then(s => (s.exists && s.data().list) || []),
+      clearFails: id => db.collection('regfails').doc(id).delete(),
       // MYBOX에서 찾은 시험지 파일을 시험에 붙이기 (새 시험이면 만들기)
       saveExamFiles: (id, doc, files) => db.collection('exams').doc(id).set(Object.assign(strip(doc), { files: firebase.firestore.FieldValue.arrayUnion(...files.map(f => strip(f))) }), { merge: true }),
       // 학교 성적 자료 (학교알리미 학기 자료 · 학교 발표). stats=null이면 지움

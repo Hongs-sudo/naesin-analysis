@@ -18,6 +18,47 @@ window.SudoPages = (function () {
 
   function toB64(canvas, q) { return canvas.toDataURL('image/jpeg', q || 0.82).split(',')[1]; }
 
+  // 사진 속 종이 찾기: 밝고 색이 거의 없는 칸이 이어지는 범위. 종이가 쪽의 92% 이상이면(스캔) null
+  function paperBox(c) {
+    const S = 200, sc = S / Math.max(c.width, c.height);
+    const w = Math.max(8, Math.round(c.width * sc)), h = Math.max(8, Math.round(c.height * sc));
+    const t = document.createElement('canvas'); t.width = w; t.height = h;
+    const x = t.getContext('2d'); x.drawImage(c, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    const paper = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      paper[i] = (mx > 150 && mx - mn < 45) ? 1 : 0;
+    }
+    // 가장 긴 연속 구간 (종이 칸이 20% 넘는 줄 · 글씨가 빽빽한 줄 몇 개는 끊긴 것으로 보지 않음)
+    const run = (n, frac) => {
+      const ok = Array.from({ length: n }, (_, k) => frac(k) > 0.2), gap = Math.max(2, Math.round(n * 0.04));
+      let best = [0, -1], s0 = -1, last = -1;
+      for (let k = 0; k <= n; k++) {
+        if (k < n && ok[k]) { if (s0 < 0 || k - last > gap) { if (s0 >= 0 && last - s0 > best[1] - best[0]) best = [s0, last]; s0 = k; } last = k; }
+      }
+      if (s0 >= 0 && last - s0 > best[1] - best[0]) best = [s0, last];
+      return best;
+    };
+    const cols = run(w, k => { let n = 0; for (let y = 0; y < h; y++) n += paper[y * w + k]; return n / h; });
+    if (cols[1] < cols[0]) return null;
+    const cw = cols[1] - cols[0] + 1;
+    const rows = run(h, y => { let n = 0; for (let k = cols[0]; k <= cols[1]; k++) n += paper[y * w + k]; return n / cw; });
+    if (rows[1] < rows[0]) return null;
+    const area = cw * (rows[1] - rows[0] + 1) / (w * h);
+    if (area > 0.92 || area < 0.3) return null;
+    const m = 1;   // 가장자리 한 칸 여유
+    const bx = [Math.max(0, cols[0] - m), Math.max(0, rows[0] - m), Math.min(w, cols[1] + 1 + m), Math.min(h, rows[1] + 1 + m)];
+    return bx.map(v => v / sc);
+  }
+  function cropCanvas(src, bx, W) {
+    const sw = bx[2] - bx[0], sh = bx[3] - bx[1], k = Math.min(1, W / sw);
+    const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(src, bx[0], bx[1], sw, sh, 0, 0, c.width, c.height);
+    return c;
+  }
+
   // files → [{canvas, b64, w, h, file, page}] (가로 1400px 안팎)
   async function load(files, opt) {
     const W = (opt && opt.width) || 1400, max = (opt && opt.maxPages) || 16, start = (opt && opt.start) || 1;
@@ -36,15 +77,36 @@ window.SudoPages = (function () {
           await pg.render({ canvasContext: ctx, viewport: vp }).promise;
           let layout = null, fives = null;
           try { layout = await textLayout(pg, vp); fives = layout ? layout.fives : null; if (layout && !layout.length) layout = null; } catch (_) { layout = null; }
-          out.push({ canvas: c, w: c.width, h: c.height, file: f.name, page: i, b64: (opt && opt.noB64) ? '' : toB64(c), layout, fives });
+          // 글자 정보가 없는 쪽(사진·스캔): 책상 같은 배경이 보이면 종이 부분만 잘라 크게
+          let cv = c, photo = false;
+          if (!layout) {
+            const bx = paperBox(c);
+            if (bx) {
+              const k = Math.min(3, W / (bx[2] - bx[0]) * c.width / W);   // 종이 폭이 W가 되도록 다시 그리기
+              const vp2 = pg.getViewport({ scale: vp.scale * k });
+              const big = document.createElement('canvas'); big.width = Math.round(vp2.width); big.height = Math.round(vp2.height);
+              const bctx = big.getContext('2d'); bctx.fillStyle = '#fff'; bctx.fillRect(0, 0, big.width, big.height);
+              await pg.render({ canvasContext: bctx, viewport: vp2 }).promise;
+              cv = cropCanvas(big, bx.map(v => v * k), W); photo = true;
+            }
+          }
+          out.push({ canvas: cv, w: cv.width, h: cv.height, file: f.name, page: i, b64: (opt && opt.noB64) ? '' : toB64(cv), layout: photo ? null : layout, fives: photo ? null : fives, photo });
         }
       } else if (isImg(f)) {
         const url = URL.createObjectURL(f);
         const im = await new Promise((res, rej) => { const x = new Image(); x.onload = () => res(x); x.onerror = () => rej(new Error(f.name + ' 그림을 열지 못했습니다')); x.src = url; });
         const sc = Math.min(1, 1600 / im.naturalWidth);
         const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * sc); c.height = Math.round(im.naturalHeight * sc);
-        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
-        out.push({ canvas: c, w: c.width, h: c.height, file: f.name, page: 1, b64: toB64(c) });
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        let cv = c, photo = false;
+        const bx = paperBox(c);
+        if (bx) {   // 사진: 원본에서 종이 부분만 다시 잘라 크게
+          const k = im.naturalWidth / c.width, full = document.createElement('canvas'); full.width = im.naturalWidth; full.height = im.naturalHeight;
+          full.getContext('2d').drawImage(im, 0, 0);
+          cv = cropCanvas(full, bx.map(v => v * k), 1600); photo = true;
+        }
+        URL.revokeObjectURL(url);
+        out.push({ canvas: cv, w: cv.width, h: cv.height, file: f.name, page: 1, b64: (opt && opt.noB64) ? '' : toB64(cv), photo });
       } else throw new Error(f.name + ': PDF·JPG·PNG만 읽을 수 있습니다 (한글 파일은 PDF로 저장해서 넣어 주세요)');
     }
     return out;

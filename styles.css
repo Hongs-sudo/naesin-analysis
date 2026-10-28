@@ -672,3 +672,32 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 .locchips button.noend { position: relative }
 .locchips button.noend::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--gold) }
 .loclegend i.noend { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); margin: 0 6px 1px 2px }
+
+/* 시험 등록 실패 기록 · 진행 단계 */
+.fsteps { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 }
+.fsteps span { font-size: 11.5px; border-radius: 5px; padding: 1px 7px; background: var(--surface-2); color: var(--muted) }
+.fsteps span.ok { background: var(--brand-soft); color: var(--brand) }
+.fsteps span.now { background: var(--brand); color: var(--brand-fg) }
+.fsteps span.x { background: #B4441C; color: #fff }
+.busybox .fsteps { flex-direction: row; flex: none } .busybox .fsteps span { font-size: 11px; color: var(--muted) } .busybox .fsteps span.ok { color: var(--brand) } .busybox .fsteps span.now { color: var(--brand-fg) }
+.frow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.failbox { border: 1.5px solid #B4441C; background: var(--warn-soft); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--fg) }
+.failbox .fh { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; color: #9A3412 }
+.failbox .fh small { color: var(--muted); font-size: 12px }
+.failbox p { margin: 0; font-size: 13.5px; line-height: 1.6 }
+.failbox .fnext { background: var(--surface); border-radius: 8px; padding: 8px 10px }
+.failbox details { font-size: 12.5px; color: var(--muted) }
+.failbox code { display: block; white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: 11.5px; margin-top: 4px }
+.failbox ul { margin: 6px 0 0; padding-left: 18px }
+.jmore { font-size: 12px; margin-top: 2px } .jmore summary { cursor: pointer; color: var(--brand) }
+/* 검수 화면: 시험지 열림 상태 */
+.pgbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 14px; border-radius: 12px; background: var(--gold-soft); color: var(--gold-fg); border: 1px solid var(--gold) }
+.pgbar small { font-size: 12.5px; opacity: .9 }
+.pgbar .frow { margin-left: auto }
+.pgbar.ok { background: var(--brand-soft); color: var(--brand); border-color: transparent }
+.pgbar.warn { background: var(--warn-soft); color: #9A3412; border-color: #B4441C }
+.pgbar .pgwarn { flex-basis: 100%; font-size: 13px; font-weight: 700 }
+.pgbar .dl { flex-basis: 100% }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .failbox .fh, :root:not([data-theme="light"]) .pgbar.warn { color: #F0916B } :root:not([data-theme="light"]) .failbox, :root:not([data-theme="light"]) .pgbar.warn { border-color: #F0916B; background: #3A221A } }
+:root[data-theme="dark"] .failbox .fh, :root[data-theme="dark"] .pgbar.warn { color: #F0916B }
+:root[data-theme="dark"] .failbox, :root[data-theme="dark"] .pgbar.warn { border-color: #F0916B; background: #3A221A }

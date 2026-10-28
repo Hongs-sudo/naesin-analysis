@@ -114,6 +114,7 @@ window.SudoAI = (function () {
   function pick(provider, data, key) {
     let out = null;
     if (provider === 'claude') {
+      if (data.stop_reason === 'max_tokens') throw fail('답이 길어 잘렸습니다', 'cut');
       const t = (data.content || []).find(c => c.type === 'tool_use');
       if (t) out = t.input;
       else {
@@ -121,41 +122,123 @@ window.SudoAI = (function () {
         const m = txt.match(new RegExp('\\{[\\s\\S]*"' + key + '"[\\s\\S]*\\}'));
         if (m) { try { out = JSON.parse(m[0]); } catch (_) {} }
       }
-      if (!out) throw new Error('AI가 결과를 돌려주지 않았습니다' + (data.stop_reason ? ` (${data.stop_reason})` : ''));
-      if (data.stop_reason === 'max_tokens') throw new Error('답이 길어 잘렸습니다. 쪽을 나눠서 다시 해 주세요');
+      if (!out) throw fail('AI가 결과를 돌려주지 않았습니다' + (data.stop_reason ? ` (${data.stop_reason})` : ''), data.stop_reason === 'refusal' ? 'refuse' : 'empty');
     } else {
       const msg = (data.output || []).find(o => o.type === 'message');
       const txt = msg && (msg.content || []).find(c => c.type === 'output_text');
-      if (!txt) throw new Error('AI가 결과를 돌려주지 않았습니다' + (data.status ? ` (${data.status})` : ''));
+      if (data.status === 'incomplete' && data.incomplete_details && data.incomplete_details.reason === 'max_output_tokens') throw fail('답이 길어 잘렸습니다', 'cut');
+      if (!txt) throw fail('AI가 결과를 돌려주지 않았습니다' + (data.status ? ` (${data.status})` : ''), 'empty');
       out = JSON.parse(txt.text);
     }
     return { result: out, usage: { in: (data.usage && data.usage.input_tokens) || 0, out: (data.usage && data.usage.output_tokens) || 0 } };
   }
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  async function send(settings, getToken, payload, key, signal) {
+  // 실패 원인을 화면에 남기기 위해 오류에 code를 붙인다
+  // code: big(너무 큼) · net(연결 끊김) · timeout(응답 없음) · busy(서버 바쁨) · auth(키·권한) · credit · http · empty(빈 결과) · cut(잘림)
+  const fail = (msg, code, extra) => Object.assign(new Error(msg), { code, ours: true }, extra || {});
+  // SSE(조금씩 받기)를 읽어 한 번에 받은 것과 같은 모양으로 만든다
+  async function readStream(res, provider, onChunk) {
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '', chars = 0;
+    const msg = { content: [], stop_reason: null, usage: {} };
+    let done = null;
+    const handle = (ev, data) => {
+      let j; try { j = JSON.parse(data); } catch (_) { return; }
+      if (provider === 'claude') {
+        if (j.type === 'message_start' && j.message) { msg.usage = Object.assign({}, j.message.usage || {}); }
+        else if (j.type === 'content_block_start') { msg.content[j.index] = Object.assign({}, j.content_block, j.content_block.type === 'tool_use' ? { _json: '' } : {}); }
+        else if (j.type === 'content_block_delta') {
+          const c = msg.content[j.index]; if (!c) return;
+          if (j.delta.type === 'text_delta') { c.text = (c.text || '') + j.delta.text; chars += j.delta.text.length; }
+          else if (j.delta.type === 'input_json_delta') { c._json += j.delta.partial_json; chars += j.delta.partial_json.length; }
+        } else if (j.type === 'content_block_stop') {
+          const c = msg.content[j.index]; if (c && c.type === 'tool_use') { try { c.input = c._json ? JSON.parse(c._json) : (c.input || {}); } catch (_) { c.input = null; } delete c._json; }
+        } else if (j.type === 'message_delta') { if (j.delta && j.delta.stop_reason) msg.stop_reason = j.delta.stop_reason; if (j.usage) Object.assign(msg.usage, j.usage); }
+        else if (j.type === 'error') { throw fail((j.error && (j.error.message || j.error.type)) || 'AI 오류', /overload/i.test(JSON.stringify(j.error || '')) ? 'busy' : 'http'); }
+      } else {
+        if (j.type === 'response.output_text.delta' && j.delta) chars += j.delta.length;
+        else if (j.type === 'response.completed' || j.type === 'response.incomplete') done = j.response;
+        else if (j.type === 'response.failed' || j.type === 'error') throw fail((j.response && j.response.error && j.response.error.message) || (j.message) || 'AI 오류', 'http');
+      }
+    };
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      buf += dec.decode(value, { stream: true });
+      let k;
+      while ((k = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, k); buf = buf.slice(k + 2);
+        let ev = '', data = '';
+        block.split('\n').forEach(l => { if (l.startsWith('event:')) ev = l.slice(6).trim(); else if (l.startsWith('data:')) data += l.slice(5).trim(); });
+        if (data) handle(ev, data);
+      }
+      onChunk(chars);
+    }
+    if (provider === 'claude') { msg.content = msg.content.filter(Boolean); return msg; }
+    return done || {};
+  }
+  // opt: { onStage(stage, info), idleMs } — stage: send(보내는 중) · wait(답 받는 중) · retry(다시 보내는 중)
+  async function send(settings, getToken, payload, key, signal, opt) {
+    opt = opt || {};
     const base = settings.url.replace(/\/+$/, '');
-    const bodyText = JSON.stringify(payload);
-    if (bodyText.length > 30e6) throw new Error('보낼 그림이 너무 큽니다. 쪽 수를 줄여 주세요');
+    const idleMs = opt.idleMs || window.SUDO_AI_IDLE || 180000;   // 3분 동안 아무 답이 없으면 멈춤
+    const stage = (s, info) => { try { opt.onStage && opt.onStage(s, info || {}); } catch (_) {} };
+    const bodyText = JSON.stringify(Object.assign({}, payload, { stream: true }));
+    const mb = bodyText.length / 1048576;
+    if (bodyText.length > 30e6) throw fail(`보낼 그림이 너무 큽니다 (${mb.toFixed(1)}MB)`, 'big', { stage: 'send', mb });
+    const MAXTRY = 2;   // 처음 1번 + 다시 1번
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(`${base}/${settings.provider}`, { method: 'POST', signal, body: bodyText,
-        headers: { 'Authorization': 'Bearer ' + await getToken(), 'Content-Type': 'application/json' } });
-      let data; try { data = await res.json(); } catch (_) { data = {}; }
-      if (res.ok) return pick(settings.provider, data, key);
-      const msg = (data.error && (data.error.message || data.error.type)) || ('HTTP ' + res.status);
-      if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt < 3) { await wait(8000 * (attempt + 1)); continue; }
-      const hint = res.status === 403 ? ' — Claude가 요청을 막았습니다. 대개 Cloudflare가 홍콩 서버를 거쳐 보냈을 때 생깁니다. Worker 설정의 Placement를 미국으로 바꿔 주세요'
-        : res.status === 401 && /api.key|x-api-key|authentication/i.test(msg) ? ' — API 키가 틀렸습니다. Worker의 키 값을 확인해 주세요'
-        : /credit|balance/i.test(msg) ? ' — 크레딧이 부족합니다. 콘솔 Billing에서 충전해 주세요' : '';
-      throw new Error(msg + hint);
+      const ctrl = new AbortController();
+      const onAbort = () => ctrl.abort();
+      if (signal) { if (signal.aborted) ctrl.abort(); else signal.addEventListener('abort', onAbort); }
+      let timedOut = false, timer = null, phase = 'send';
+      const arm = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, idleMs); };
+      const tidy = () => { clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort); };
+      stage(attempt ? 'retry' : 'send', { attempt, mb });
+      let retryWhy = '';
+      try {
+        arm();
+        const res = await fetch(`${base}/${settings.provider}`, { method: 'POST', signal: ctrl.signal, body: bodyText,
+          headers: { 'Authorization': 'Bearer ' + await getToken(), 'Content-Type': 'application/json' } });
+        if (res.ok) {
+          phase = 'wait'; arm(); stage('wait', { chars: 0, attempt, mb });
+          const data = /event-stream/.test(res.headers.get('Content-Type') || '')
+            ? await readStream(res, settings.provider, chars => { arm(); stage('wait', { chars, attempt, mb }); })
+            : await res.json();
+          tidy();
+          try { return pick(settings.provider, data, key); }
+          catch (e) { throw Object.assign(e, { code: e.ours ? e.code : 'empty', ours: true, stage: 'parse', mb, tries: attempt + 1 }); }
+        }
+        tidy();
+        let data; try { data = await res.json(); } catch (_) { data = {}; }
+        const msg = (data.error && (data.error.message || data.error.type)) || ('HTTP ' + res.status);
+        if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt + 1 < MAXTRY) { retryWhy = `서버 응답 ${res.status}`; throw { retry: true }; }
+        const code = res.status === 413 ? 'big' : res.status === 429 || res.status === 529 || res.status >= 500 ? 'busy'
+          : /credit|balance/i.test(msg) ? 'credit' : res.status === 401 || res.status === 403 ? 'auth' : 'http';
+        const hint = res.status === 403 ? ' — Claude가 요청을 막았습니다. 대개 Cloudflare가 홍콩 서버를 거쳐 보냈을 때 생깁니다. Worker 설정의 Placement를 미국으로 바꿔 주세요'
+          : res.status === 401 && /api.key|x-api-key|authentication/i.test(msg) ? ' — API 키가 틀렸습니다. Worker의 키 값을 확인해 주세요'
+          : code === 'credit' ? ' — 크레딧이 부족합니다. 콘솔 Billing에서 충전해 주세요' : '';
+        throw fail(msg + hint, code, { stage: 'send', status: res.status, mb, tries: attempt + 1 });
+      } catch (e) {
+        tidy();
+        if (e && e.retry) { stage('retry', { attempt: attempt + 1, why: retryWhy, mb }); await wait(8000); continue; }
+        if (e && e.ours) throw e;
+        if (signal && signal.aborted) throw e;   // 사용자가 그만둠
+        if (timedOut) throw fail(`AI가 ${Math.round(idleMs / 60000)}분 동안 답을 주지 않았습니다`, 'timeout', { stage: phase, mb, tries: attempt + 1 });
+        // 연결 끊김 (Failed to fetch 등): 한 번만 다시
+        if (attempt + 1 < MAXTRY) { stage('retry', { attempt: attempt + 1, why: '연결이 끊김', mb }); await wait(4000); continue; }
+        throw fail('연결이 끊겼습니다 (' + ((e && e.message) || e) + ')', 'net', { stage: phase, mb, tries: attempt + 1 });
+      }
     }
   }
 
   // 시험지 읽기: pages = SudoPages.load() 결과
-  async function analyze({ settings, getToken, pages, meta, catalogLines, example, signal, withAns }) {
-    if (!pages.length) throw new Error('읽을 쪽이 없습니다');
-    const p = body(settings.provider, settings.model, imgContent(pages, settings.provider), examPrompt(meta, catalogLines, example, withAns),
+  // note: 나눠 읽을 때 덧붙이는 안내 · onStage/idleMs: send()로 그대로
+  async function analyze({ settings, getToken, pages, meta, catalogLines, example, signal, withAns, note, onStage, idleMs }) {
+    if (!pages.length) throw fail('읽을 쪽이 없습니다', 'empty', { stage: 'img' });
+    const p = body(settings.provider, settings.model, imgContent(pages, settings.provider), examPrompt(meta, catalogLines, example, withAns) + (note ? '\n\n' + note : ''),
       'save_items', examSchema(!!withAns), '당신은 한국 중학교 수학 내신 시험지를 문항별로 분석하는 꼼꼼한 조교입니다.');
-    return send(settings, getToken, p, 'items', signal);
+    return send(settings, getToken, p, 'items', signal, { onStage, idleMs });
   }
   // 자료 색인: 쪽 몇 장씩
   async function indexMaterial({ settings, getToken, pages, meta, catalogLines, signal }) {
