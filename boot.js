@@ -219,6 +219,9 @@
         // 옛 그림은 지우지 않고 둔다 (이미 보낸 링크·되돌리기 대비)
         return { results: res.size, links: links.docs.length };
       },
+      // 학교 소식: 나이스 학사일정 · 학업성취 (meta/neis, 원장·원장 공동이 씀)
+      getNeis: () => db.doc('meta/neis').get().then(s => s.exists ? s.data() : null),
+      saveNeis: patch => db.doc('meta/neis').set(strip(patch), { merge: true }),
       // 분석지의 '다음 시험 준비' 문장 (null이면 처음 문장으로)
       saveTodo: (id, todo) => db.collection('analyses').doc(id).update({ todo: todo ? strip(todo) : firebase.firestore.FieldValue.delete() }),
       // 유사문항 저장 결과 지우기 (핵심 내용을 고친 문항)

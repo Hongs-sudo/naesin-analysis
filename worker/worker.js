@@ -7,6 +7,8 @@
 //   ANTHROPIC_API_KEY   Claude를 쓸 때
 //   OPENAI_API_KEY      GPT를 쓸 때
 // 둘 중 하나만 넣어도 됩니다.
+//   NEIS_KEY            나이스 교육정보 개방 포털 인증키 (학교 학사일정·기본정보)
+//   SCHOOLINFO_KEY      학교알리미 OpenAPI 인증키 (학교 공시 정보)
 
 const FIREBASE_PROJECT = 'sudo-naesin';
 const OWNER = 'ilmvm66@gmail.com';
@@ -95,7 +97,29 @@ export default {
     }
 
     if (path === '/status' && request.method === 'GET') {
-      return json({ ok: true, claude: !!env.ANTHROPIC_API_KEY, openai: !!env.OPENAI_API_KEY, colo: (request.cf && request.cf.colo) || '' }, 200, H);
+      return json({ ok: true, claude: !!env.ANTHROPIC_API_KEY, openai: !!env.OPENAI_API_KEY, neis: !!env.NEIS_KEY, schoolinfo: !!env.SCHOOLINFO_KEY, colo: (request.cf && request.cf.colo) || '' }, 200, H);
+    }
+
+    // 나이스: 학교 기본정보 · 학사일정 · 시간표 (읽기만, 키는 여기에만 있음)
+    if (path.startsWith('/neis/') && request.method === 'GET') {
+      const svc = path.slice(6);
+      if (!['schoolInfo', 'SchoolSchedule', 'misTimetable'].includes(svc)) return json({ error: { message: '없는 주소입니다' } }, 404, H);
+      if (!env.NEIS_KEY) return json({ error: { message: 'Worker에 NEIS_KEY가 없습니다', code: 'nokey' } }, 400, H);
+      const u = new URL('https://open.neis.go.kr/hub/' + svc);
+      for (const [k, v] of new URL(request.url).searchParams) if (/^[A-Z_]+$/.test(k) || k === 'pIndex' || k === 'pSize') u.searchParams.set(k, v);
+      u.searchParams.set('KEY', env.NEIS_KEY); u.searchParams.set('Type', 'json');
+      if (!u.searchParams.get('pSize')) u.searchParams.set('pSize', '1000');
+      const r = await fetch(u.toString(), { headers: { 'User-Agent': 'sudo-naesin' } });
+      return new Response(await r.text(), { status: r.status, headers: { ...H, 'Content-Type': 'application/json; charset=utf-8' } });
+    }
+    // 학교알리미 OpenAPI (공시 정보, 읽기만)
+    if (path === '/schoolinfo' && request.method === 'GET') {
+      if (!env.SCHOOLINFO_KEY) return json({ error: { message: 'Worker에 SCHOOLINFO_KEY가 없습니다', code: 'nokey' } }, 400, H);
+      const u = new URL('https://www.schoolinfo.go.kr/openApi.do');
+      for (const [k, v] of new URL(request.url).searchParams) if (['apiType', 'pbanYr', 'schulKndCode', 'sidoCode', 'sggCode', 'schulCode'].includes(k)) u.searchParams.set(k, v);
+      u.searchParams.set('apiKey', env.SCHOOLINFO_KEY);
+      const r = await fetch(u.toString(), { headers: { 'User-Agent': 'sudo-naesin' } });
+      return new Response(await r.text(), { status: r.status, headers: { ...H, 'Content-Type': 'application/json; charset=utf-8' } });
     }
 
     let upstream, headers;

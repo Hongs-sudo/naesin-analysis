@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="styles.css?v=32">
+<link rel="stylesheet" href="styles.css?v=33">
 </head>
 <body>
 <div class="app">
@@ -25,6 +25,7 @@
     <div class="eyebrow">수도 내신분석</div>
     <nav class="nav" aria-label="메뉴">
       <a href="#archive" data-v="archive"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v4H4zM5 9v10h14V9M10 13h4"/></svg><span class="lbl">시험지 보관함</span><span class="lbs">보관함</span></a>
+      <a href="#news" data-v="news"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15h3"/></svg><span class="lbl">학교 소식</span><span class="lbs">소식</span></a>
       <a href="#school" data-v="school"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg><span class="lbl">학교별 분석</span><span class="lbs">학교</span></a>
       <a href="#types" data-v="types"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg><span class="lbl">단원 · 유형 목록</span><span class="lbs">유형</span></a>
       <a href="#library" data-v="library"><svg class="ic" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5-.8 3 15.6-3.6.8z"/></svg><span class="lbl">자료실</span><span class="lbs">자료</span></a>
@@ -59,14 +60,15 @@
 <script src="similar.js?v=31"></script>
 <script src="library.js?v=30"></script>
 <script src="students.js?v=27"></script>
+<script src="schools.js?v=2"></script>
 <script src="members.js?v=27"></script>
 <script src="mybox.js?v=28"></script>
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__bip = e; dispatchEvent(new Event('bip-ready')); });
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
-<script src="boot.js?v=31"></script>
+<script src="boot.js?v=32"></script>
 </body>
 </html>
