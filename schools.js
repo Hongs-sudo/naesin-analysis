@@ -121,6 +121,7 @@ window.SudoSchools = function (H) {
     S.state = 'sync'; S.msg = ''; paint();
     try {
       if (!Object.keys(d.schools).length) await seed();
+      if (!Object.keys(d.schools).length) throw new Error('관리 학교를 나이스에서 찾지 못했습니다. Worker 코드와 NEIS_KEY를 확인해 주세요');   // 다음에 다시 시도하도록 확인 시각을 남기지 않음
       const news = [], patch = {};
       for (const sc of Object.values(d.schools).filter(x => x.managed)) {
         try { patch[sc.code] = await syncOne(sc, news); }
