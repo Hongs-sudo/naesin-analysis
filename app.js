@@ -939,7 +939,7 @@ window.startApp = function (D, ctx) {
   const LIB = window.SudoLibrary(H2);
   const STU = window.SudoStudents(H2);
   const SCH = window.SudoSchools ? window.SudoSchools(H2) : null;
-  const MG = window.SudoMerge && CAN.editExam ? window.SudoMerge(H2) : null;
+  const MG = window.SudoMerge && ctx && ctx.can && ctx.can.editExam ? window.SudoMerge(H2) : null;
   const MB = window.SudoMembers(H2);
   // MYBOX: 찾은 시험지 파일을 보관함 시험에 붙이기 (새 시험이면 만들기)
   function addExamFiles(id, doc, files) {
