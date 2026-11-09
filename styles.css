@@ -732,3 +732,20 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 .aptbl { width: 100%; border-collapse: collapse; font-size: 13px } .aptbl th, .aptbl td { padding: 4px; text-align: center }
 .aptbl input { width: 100%; min-width: 48px; min-height: 34px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--fg); padding: 0 6px; font: inherit }
 .statdlg textarea { width: 100%; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--fg); padding: 8px 10px; font: inherit; font-size: 13px }
+/* 통합 미리보기 */
+.mgsrc { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center }
+.mgtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px }
+.mgtile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px }
+.mgtile b { font-size: 13px }
+.mgnums { display: flex; gap: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.mgnums strong { font-size: 19px; color: var(--brand); margin-right: 3px }
+.mghead { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; flex-wrap: wrap }
+.mghead .seg { display: flex; gap: 4px; flex-wrap: wrap }
+.mghead .seg button { font: inherit; font-size: 12.5px; border: 1px solid var(--line-2); background: var(--surface); color: var(--fg); border-radius: 99px; padding: 4px 12px; cursor: pointer }
+.mghead .seg button.on { background: var(--brand); color: var(--brand-fg); border-color: var(--brand) }
+.mgtbl { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px }
+.mgtbl th, .mgtbl td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top }
+.mgtbl th { font-size: 12px; color: var(--muted); border-top: 0 }
+.pill.p-ok { background: var(--brand-soft); color: var(--brand) } .pill.p-gold { background: var(--gold-soft); color: var(--gold-fg) } .pill.p-warn { background: var(--warn-soft); color: #9A3412 }
+:root[data-theme="dark"] .pill.p-warn { color: #F0916B }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.p-warn { color: #F0916B } }
