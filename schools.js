@@ -114,11 +114,38 @@ window.SudoSchools = function (H) {
     }
     return { events, syncedAt: new Date().toISOString(), err: '' };
   }
+  // ---------- 학교알리미 공시: 학년별 학생 수(apiType 63)·학급 수(62) ----------
+  // 2026년부터 발급된 키는 시·군·구 코드(sggCode)가 꼭 필요 → 주소의 구 이름으로 찾는다 (서울)
+  const SEOUL_GU = { 종로구: 11110, 중구: 11140, 용산구: 11170, 성동구: 11200, 광진구: 11215, 동대문구: 11230, 중랑구: 11260, 성북구: 11290, 강북구: 11305, 도봉구: 11320, 노원구: 11350, 은평구: 11380, 서대문구: 11410, 마포구: 11440, 양천구: 11470, 강서구: 11500, 구로구: 11530, 금천구: 11545, 영등포구: 11560, 동작구: 11590, 관악구: 11620, 서초구: 11650, 강남구: 11680, 송파구: 11710, 강동구: 11740 };
+  const guOf = sc => { const m = String(sc.addr || '').match(/서울\S*\s+(\S+구)/); return m && SEOUL_GU[m[1]] ? SEOUL_GU[m[1]] : 0; };
+  async function alimi(type, gu, yr) {
+    const d = await api(`/schoolinfo?apiType=${type}&pbanYr=${yr}&schulKndCode=03&sidoCode=11&sggCode=${gu}`);
+    if (d.resultCode !== 'success') throw new Error(`학교알리미: ${d.resultMsg || d.resultCode}`);
+    return d.list || [];
+  }
+  // 관리 학교의 학생 수: 한 달에 한 번, 구마다 한 번씩 부름
+  async function syncInfo(list, force) {
+    const need = list.filter(sc => guOf(sc) && (force || !sc.info || Date.now() - new Date(sc.info.at) > 30 * 864e5));
+    const patch = {};
+    for (const gu of [...new Set(need.map(guOf))]) {
+      let yr = new Date().getFullYear(), stu = [];
+      try { stu = await alimi(63, gu, yr); } catch (_) {}
+      if (!stu.length) { yr--; stu = await alimi(63, gu, yr); }
+      let cls = []; try { cls = await alimi(62, gu, yr); } catch (_) {}
+      need.filter(sc => guOf(sc) === gu).forEach(sc => {
+        const r = stu.find(x => short(x.SCHUL_NM) === sc.name), c = cls.find(x => short(x.SCHUL_NM) === sc.name);
+        if (!r) return;
+        const st = {}; [1, 2, 3].forEach(g => { st[g] = (+r['COL_M' + g] || 0) + (+r['COL_W' + g] || 0); });
+        patch[sc.code] = { info: { yr, students: st, total: +r.SUM || 0, classes: c ? { 1: +c.COL_1 || 0, 2: +c.COL_2 || 0, 3: +c.COL_3 || 0 } : null, avgClass: c ? +c.AVG_FGR_SUM || 0 : null, at: new Date().toISOString() } };
+      });
+    }
+    return patch;
+  }
   async function sync(force) {
     if (!canSync || S.state === 'sync') return;
     const d = await load();
     if (!force && d.syncedAt && Date.now() - new Date(d.syncedAt) < 20 * 3600e3) return;
-    S.state = 'sync'; S.msg = ''; paint();
+    S.state = 'sync'; S.msg = ''; S.msg2 = ''; paint();
     try {
       if (!Object.keys(d.schools).length) await seed();
       if (!Object.keys(d.schools).length) throw new Error('관리 학교를 나이스에서 찾지 못했습니다. Worker 코드와 NEIS_KEY를 확인해 주세요');   // 다음에 다시 시도하도록 확인 시각을 남기지 않음
@@ -127,6 +154,9 @@ window.SudoSchools = function (H) {
         try { patch[sc.code] = await syncOne(sc, news); }
         catch (e) { if (e.code === 'nokey' || e.code === 'nourl') throw e; patch[sc.code] = { err: e.message }; }
       }
+      // 학교알리미 학생 수 (실패해도 학사일정은 그대로 저장)
+      try { const ip = await syncInfo(Object.values(d.schools).filter(x => x.managed), force); Object.keys(ip).forEach(k => { patch[k] = Object.assign(patch[k] || {}, ip[k]); }); }
+      catch (e) { if (e.code !== 'nokey') S.msg2 = e.message; }
       Object.keys(patch).forEach(k => Object.assign(d.schools[k], patch[k]));
       const at = new Date().toISOString();
       d.news = news.map(n => Object.assign({ at }, n)).concat(d.news || []).slice(0, 40);
@@ -189,8 +219,9 @@ window.SudoSchools = function (H) {
       const tx = $('#apTx');
       tx.oninput = () => {
         const got = parseAlimi(tx.value), gs = Object.keys(got);
+        Object.keys(got).forEach(g => { if (got[g].n === '' && sc.info && sc.info.students[g]) { got[g].n = sc.info.students[g]; got[g].nAuto = 1; } });
         Object.assign(V.rows, got); const keep = tx.value; draw(); $('#apTx').value = keep;
-        $('#apMsg').textContent = gs.length ? `${gs.map(g => g + '학년').join('·')} 수학 줄을 찾았습니다. 숫자를 확인하고 저장을 눌러 주세요` : '수학 줄을 찾지 못했습니다. 표 전체(제목 줄 포함)를 다시 복사해 붙여 넣거나, 칸에 직접 넣어 주세요';
+        $('#apMsg').textContent = gs.length ? `${gs.map(g => g + '학년').join('·')} 수학 줄을 찾았습니다. 숫자를 확인하고 저장을 눌러 주세요${gs.some(g => got[g].nAuto) ? ' (수강자 칸이 비어 있던 학년은 학교알리미 학생 수로 채웠습니다)' : ''}` : '수학 줄을 찾지 못했습니다. 표 전체(제목 줄 포함)를 다시 복사해 붙여 넣거나, 칸에 직접 넣어 주세요';
       };
       $$('[data-g]', sh).forEach(inp => inp.onchange = () => {
         const g = +inp.dataset.g, r = V.rows[g] = V.rows[g] || { dist: {} };
@@ -237,7 +268,8 @@ window.SudoSchools = function (H) {
     const L = latestTerm();
     const banner = S.state === 'nokey' ? `<div class="callout"><b>나이스 인증키를 기다리고 있습니다.</b> Worker에 NEIS_KEY를 넣고 새 Worker 코드를 배포하면, 앱을 열 때마다 하루 한 번 관리 학교 학사일정을 가져옵니다.</div>`
       : S.state === 'err' ? `<div class="callout">학사일정을 가져오지 못했습니다: ${esc(S.msg)}</div>`
-      : S.state === 'sync' ? '<div class="callout">나이스에서 학사일정을 가져오는 중…</div>' : '';
+      : S.state === 'sync' ? '<div class="callout">나이스에서 학사일정을 가져오는 중…</div>'
+      : S.msg2 ? `<div class="callout">학사일정은 가져왔지만 학교알리미 학생 수를 가져오지 못했습니다: ${esc(S.msg2)}</div>` : '';
     main.innerHTML = `
       <div class="head"><div><div class="kicker">나이스 학사일정 · 학교알리미 학업성취</div><h1>학교 소식</h1></div>
         <div class="headact">${canSync ? `<button type="button" class="btn ghost" id="nwSync" ${S.state === 'sync' ? 'disabled' : ''}>지금 확인</button><button type="button" class="btn" id="nwAdd">학교 추가</button>` : ''}</div></div>
@@ -251,7 +283,7 @@ window.SudoSchools = function (H) {
       <section class="card"><h2>관리 학교 <small>${list.length}곳 · 학업성취는 ${L.y} ${L.t}학기 공시 기준</small></h2>
         <div class="tablewrap"><table class="sctbl"><thead><tr><th>학교</th><th>다음 시험</th><th>학업성취 (${L.y}-${L.t})</th><th></th></tr></thead><tbody>
         ${list.map(sc => { const nx = periods(sc.events).find(p => p.end >= t0), got = achieveFor(sc.code, L.y, L.t); return `<tr>
-          <td><b>${esc(sc.name)}</b>${sc.home ? ` <a class="dl" href="${esc(/^https?:/.test(sc.home) ? sc.home : 'http://' + sc.home)}" target="_blank" rel="noopener">홈페이지</a>` : ''}${sc.err ? `<br><small class="goldt">${esc(sc.err)}</small>` : ''}</td>
+          <td><b>${esc(sc.name)}</b>${sc.home ? ` <a class="dl" href="${esc(/^https?:/.test(sc.home) ? sc.home : 'http://' + sc.home)}" target="_blank" rel="noopener">홈페이지</a>` : ''}${sc.info ? `<br><small class="dl" title="학교알리미 ${sc.info.yr} 공시">학생 ${[1, 2, 3].map(g => `${g}학년 ${sc.info.students[g]}`).join(' · ')}${sc.info.classes ? ` · 학급 ${[1, 2, 3].map(g => sc.info.classes[g]).join('/')}` : ''}</small>` : ''}${sc.err ? `<br><small class="goldt">${esc(sc.err)}</small>` : ''}</td>
           <td>${nx ? `${esc(gradeTxt(nx.grades))} ${esc(nx.label)} <small class="dl">${range(nx)}</small>` : '<span class="dl">나이스에 없음</span>'}</td>
           <td>${got.length === 3 ? '<span class="pill ok">넣음</span>' : got.length ? `<span class="pill">${got.join('·')}학년만</span>` : '<span class="pill warn">아직</span>'} ${canSync ? `<button type="button" class="linkbtn" data-ach="${esc(sc.code)}">붙여 넣기</button>` : ''}</td>
           <td><button type="button" class="linkbtn" data-ev="${esc(sc.code)}">${S.open === sc.code ? '일정 닫기' : '일정 보기'}</button>${canSync ? ` · <button type="button" class="linkbtn" data-rm="${esc(sc.code)}">빼기</button>` : ''}</td></tr>
