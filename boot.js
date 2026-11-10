@@ -219,6 +219,40 @@
         // 옛 그림은 지우지 않고 둔다 (이미 보낸 링크·되돌리기 대비)
         return { results: res.size, links: links.docs.length };
       },
+      // ---- 통합 3단계: 전체 백업 · 새 칸(sources·items·aiqueue)에 복사 (원장님만 화면에서 부름) ----
+      backupAll: async (withImg, log) => {
+        log = log || (() => {});
+        const out = { project: 'sudo-naesin', exportedAt: now(), collections: {} };
+        const names = ['exams', 'analyses', 'types', 'materials', 'drafts', 'similar', 'meta', 'students', 'results', 'members', 'shared', 'regfails', 'sources', 'items', 'aiqueue'].concat(withImg ? ['img'] : []);
+        for (const n of names) {
+          log(`백업 중 · ${n}`);
+          try { const s = await db.collection(n).get(); out.collections[n] = s.docs.map(d => ({ id: d.id, data: d.data() })); }
+          catch (e) { out.collections[n] = { error: e.message }; }
+        }
+        // AI 사용량: 2026년 9월부터 이번 달까지
+        out.collections.usage = {};
+        const d0 = new Date(2026, 8, 1), d1 = new Date();
+        for (let d = d0; d <= d1; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+          const mo = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+          try { const s = await db.collection('usage').doc(mo).collection('by').get(); out.collections.usage[mo] = s.docs.map(x => ({ id: x.id, data: x.data() })); } catch (_) {}
+        }
+        return out;
+      },
+      migWrite: async (col, docs, log) => {
+        for (let k = 0; k < docs.length; k += 400) {
+          const b = db.batch();
+          docs.slice(k, k + 400).forEach(x => b.set(db.collection(col).doc(x.id), strip(x.data)));
+          await b.commit();
+          log && log(Math.min(k + 400, docs.length), docs.length);
+        }
+      },
+      migCount: async (col, field, value) => {
+        let q = db.collection(col); if (field) q = q.where(field, '==', value);
+        try { const c = await q.count().get(); return c.data().count; } catch (_) { return (await q.get()).size; }
+      },
+      saveStudentRaw: (id, d) => db.collection('students').doc(id).set(strip(d), { merge: true }),
+      getMeta: id => db.doc('meta/' + id).get().then(x => x.exists ? x.data() : null),
+      saveMeta: (id, d) => db.doc('meta/' + id).set(strip(d), { merge: true }),
       // 학교 소식: 나이스 학사일정 · 학업성취 (meta/neis, 원장·원장 공동이 씀)
       getNeis: () => db.doc('meta/neis').get().then(s => s.exists ? s.data() : null),
       saveNeis: patch => db.doc('meta/neis').set(strip(patch), { merge: true }),

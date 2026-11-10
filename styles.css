@@ -749,3 +749,7 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 .pill.p-ok { background: var(--brand-soft); color: var(--brand) } .pill.p-gold { background: var(--gold-soft); color: var(--gold-fg) } .pill.p-warn { background: var(--warn-soft); color: #9A3412 }
 :root[data-theme="dark"] .pill.p-warn { color: #F0916B }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.p-warn { color: #F0916B } }
+.migsteps { display: flex; flex-direction: column; gap: 8px }
+.migrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface) }
+.migrow > div:first-child { min-width: 0; flex: 1 1 300px }
+.migact { display: flex; gap: 8px; align-items: center }

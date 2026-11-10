@@ -147,11 +147,13 @@ window.SudoMerge = function (H) {
         ${!R ? `<button type="button" class="btn" id="mgRead" ${M.busy ? 'disabled' : ''}>${M.user ? '두 앱 읽기' : '오답노트 계정으로 로그인하고 읽기'}</button>` : ''}
         ${M.busy ? `<span class="dl">${esc(M.busy)}</span>` : ''}${M.err ? `<span class="goldt">${esc(M.err)}</span>` : ''}
       </section>
-      ${R ? report(R) : `<div class="empty">‘${M.user ? '두 앱 읽기' : '오답노트 계정으로 로그인하고 읽기'}’를 누르면 오답노트(sudo-odap)를 같은 Google 계정으로 읽습니다. 로그인 창이 한 번 뜹니다.</div>`}`;
+      ${R ? report(R) + migHtml() : `<div class="empty">‘${M.user ? '두 앱 읽기' : '오답노트 계정으로 로그인하고 읽기'}’를 누르면 오답노트(sudo-odap)를 같은 Google 계정으로 읽습니다. 로그인 창이 한 번 뜹니다.</div>`}`;
     const rd = $('#mgRead'); if (rd) rd.onclick = run;
     const dn = $('#mgDown'); if (dn) dn.onclick = download;
     $$('[data-mt]').forEach(b => b.onclick = () => { M.tab = b.dataset.mt; render(); });
     $$('[data-ms]').forEach(b => b.onclick = () => { M.stab = b.dataset.ms; render(); });
+    $$('[data-mig]').forEach(b => b.onclick = () => runStep(b.dataset.mig).catch(() => {}));
+    const ma = $('#migAll'); if (ma) ma.onclick = runAll;
   }
   function report(R) {
     const T = R.tiles, P = R.pairs.filter(p => p.k === M.tab), S = R.students.filter(s => s.k === M.stab);
@@ -214,5 +216,122 @@ window.SudoMerge = function (H) {
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     toast(`보고서를 내려받았습니다 (${(blob.size / 1048576).toFixed(1)}MB)`);
   }
-  return { render, analyze, matchFiles, matchStudents };
+  // ================= 3단계: 옮기기 (복사만, 지우지 않음) =================
+  const STEPS = [
+    ['nightly', '오답노트 밤마다 AI 끄기', '오답노트 설정에서 밤 AI 분석을 끕니다 (대기열은 지우지 않음)'],
+    ['backup', '내신분석 전체 백업 (문항 그림 포함)', '날짜 붙은 JSON 파일을 내려받습니다'],
+    ['books', '오답노트 교재 → 자료', '교재 정리 목록 전체 (중등·고등) · 파일·목차 함께'],
+    ['exams', '내신분석 시험·자료실 → 자료', '시험 ID로 맞추고, 오답노트 교재 목록의 같은 파일과 이어 둡니다'],
+    ['items', '문항 → 문항 은행', '내신분석 시험·자료실 문항 + 오답노트 문항 (검수 상태 그대로)'],
+    ['people', '학생 · AI 대기 · AI 사용 기록', '오답노트 학생 → 내신분석 학생(담당 원장님) · AI 대기열은 자동 실행 없음'],
+    ['count', '세어 보기', '옮긴 수가 원래 수와 같은지 확인']
+  ];
+  const ST = () => (M.mig = M.mig || { done: {}, log: {}, busy: '' });
+  async function loadMigState() { if (M.migLoaded) return; M.migLoaded = true; try { const d = await (ctx.getMeta ? ctx.getMeta('merge') : null); if (d && d.done) { ST().done = d.done; paint(); } } catch (_) {} }
+  const saveMig = () => ctx.saveMeta ? ctx.saveMeta('merge', { done: ST().done }).catch(() => {}) : null;
+  function migHtml() {
+    loadMigState();
+    const S = ST();
+    return `<section class="card" id="migCard"><div class="mghead"><h2>옮기기 <small>새 칸(자료·문항 은행)에 복사만 합니다 · 기존 데이터는 그대로 · 몇 번 눌러도 결과는 같음</small></h2>
+      <button type="button" class="btn" id="migAll" ${S.busy ? 'disabled' : ''}>모두 차례로</button></div>
+      <div class="migsteps">${STEPS.map(([k, t, d], i) => { const dn = S.done[k], now = S.busy === k; return `<div class="migrow">
+        <div><b>${i + 1}. ${t}</b><br><span class="dl">${d}</span>${S.log[k] ? `<br><span class="dl">${esc(S.log[k])}</span>` : dn ? `<br><span class="dl">${esc(dn.msg || '')}</span>` : ''}</div>
+        <div class="migact">${now ? '<span class="pill p-gold">진행 중</span>' : dn ? `<span class="pill p-ok">완료 · ${new Date(dn.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+          <button type="button" class="btn ghost sm" data-mig="${k}" ${S.busy ? 'disabled' : ''}>${dn ? '다시' : '실행'}</button></div></div>`; }).join('')}</div></section>`;
+  }
+  const logStep = (k, t) => { ST().log[k] = t; const c = $('#migCard'); if (c) render(); };
+  const course = g => { g = String(g || ''); let m = g.match(/^중([123])-([12])$/); if (m) return `중등${m[1]}-${m[2]}`; m = g.match(/^중([123])$/); if (m) return `중등${m[1]}`; if (/^고등/.test(g)) return g.replace('·', ' '); return g; };
+  async function stepNightly() {
+    const m = await mods();
+    await m.F.setDoc(m.F.doc(m.db, 'academies', M.odap.academyId, 'settings', 'nightly'), { enabled: false, disabledAt: Date.now(), disabledBy: '수학도서관 통합(원장님 요청)' }, { merge: true });
+    return '오답노트 밤 AI를 껐습니다';
+  }
+  async function stepBackup() {
+    const data = await ctx.backupAll(true, t => logStep('backup', t));
+    const d = new Date(), stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `수학도서관-내신분석-전체백업-${stamp}.json`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    const n = Object.values(data.collections).reduce((s, v) => s + (Array.isArray(v) ? v.length : 0), 0);
+    return `${(blob.size / 1048576).toFixed(1)}MB · 문서 ${n.toLocaleString()}개를 내려받았습니다`;
+  }
+  // 기출 파일 이름 → 시험 ID
+  const examByFile = () => { const m = new Map(); M.naesin.exams.forEach(e => e.files.forEach(f => m.set(norm(base(f.path)), e.id))); return m; };
+  async function stepBooks() {
+    const ebf = examByFile(), at = new Date().toISOString();
+    const docs = (M.odap.catalogBooks || []).map(b => {
+      const same = [...new Set((b.files || []).map(f => ebf.get(norm(base(f.rel)))).filter(Boolean))];
+      const data = Object.assign({}, b, { kind: b.kind || '교재', title: b.title || '', grade: b.grade || '', course: course(b.grade), origin: { app: 'odap', id: b.id }, sameExams: same, copiedAt: at });
+      delete data.id; return { id: 'ob_' + b.id, data };
+    });
+    await ctx.migWrite('sources', docs, (a, n) => logStep('books', `교재 ${a}/${n}`));
+    return `교재 ${docs.length.toLocaleString()}개 · 그중 내신분석 시험과 같은 파일 ${docs.filter(x => x.data.sameExams.length).length}개`;
+  }
+  async function stepExams() {
+    const at = new Date().toISOString(), obByFile = new Map();
+    (M.odap.catalogBooks || []).forEach(b => (b.files || []).forEach(f => obByFile.set(norm(base(f.rel)) + '|' + (f.size || 0), 'ob_' + b.id)));
+    const obByName = new Map(); (M.odap.catalogBooks || []).forEach(b => (b.files || []).forEach(f => obByName.set(norm(base(f.rel)), 'ob_' + b.id)));
+    const ex = M.naesin.exams.map(e => ({ id: 'ex_' + e.id, data: { kind: '기출', title: `${e.school} ${e.year} ${e.grade}학년 ${e.sem}학기 ${e.exam}`, course: `중등${e.grade}-${e.sem}`, exam: { id: e.id, school: e.school, year: e.year, grade: e.grade, sem: e.sem, exam: e.exam },
+      files: e.files, analyzed: !!e.analysis, status: e.analysis ? e.analysis.status : '', sameBooks: [...new Set(e.files.map(f => obByName.get(norm(base(f.path)))).filter(Boolean))], origin: { app: 'naesin', id: e.id }, copiedAt: at } }));
+    const KIND = { academy: '학원 교재', school: '학교 프린트', custom: '선생님 보조자료' };
+    const mt = M.naesin.materials.map(m => ({ id: 'mt_' + m.id, data: { kind: KIND[m.src] || '자료', title: m.name, course: m.course || '', school: m.school || '', files: m.path ? [{ rel: m.path, size: m.size || 0, ext: m.ext || '' }] : [],
+      status: m.status || '', commercial: !!m.commercial, sameBooks: [obByFile.get(norm(base(m.path)) + '|' + (m.size || 0)) || obByName.get(norm(base(m.path)))].filter(Boolean), origin: { app: 'naesin', id: m.id }, copiedAt: at } }));
+    await ctx.migWrite('sources', ex.concat(mt), (a, n) => logStep('exams', `자료 ${a}/${n}`));
+    return `시험 ${ex.length} · 자료실 ${mt.length} → 자료 · 오답노트 교재와 이어진 것 ${ex.concat(mt).filter(x => x.data.sameBooks.length).length}개`;
+  }
+  async function stepItems() {
+    const at = new Date().toISOString(), docs = [];
+    M.naesin.exams.forEach(e => (e.analysis ? e.analysis.items : []).forEach(it => docs.push({ id: `x_${e.id}_${it.essay ? 'e' : ''}${it.no}`, data: Object.assign({}, it, { source: 'ex_' + e.id, from: '기출', status: e.analysis.status === 'ai' ? 'review' : 'checked', origin: { app: 'naesin', exam: e.id }, copiedAt: at }) })));
+    M.naesin.materials.forEach(m => (m.problems || []).forEach((p, k) => { if (p.skip) return; docs.push({ id: `m_${m.id}_${k}`, data: Object.assign({}, p, { course: m.course || '', source: 'mt_' + m.id, from: '자료실', status: m.status === 'done' ? 'checked' : 'review', origin: { app: 'naesin', material: m.id, k }, copiedAt: at }) }); }));
+    (M.odap.bankItems || []).forEach(b => { const d = Object.assign({}, b, { source: 'ob_' + b.bookId, from: '교재', status: b.status === 'review' || !b.status ? 'review' : 'checked', origin: { app: 'odap', id: b.id }, copiedAt: at }); delete d.id; docs.push({ id: 'o_' + b.id, data: d }); });
+    await ctx.migWrite('items', docs, (a, n) => logStep('items', `문항 ${a.toLocaleString()}/${n.toLocaleString()}`));
+    M.itemsWant = new Set(docs.map(d => d.id)).size;
+    return `문항 ${docs.length.toLocaleString()}개 (기출 ${docs.filter(d => d.data.from === '기출').length.toLocaleString()} · 자료실 ${docs.filter(d => d.data.from === '자료실').length.toLocaleString()} · 오답노트 교재 ${docs.filter(d => d.data.from === '교재').length})`;
+  }
+  async function stepPeople() {
+    const m = await mods(), at = new Date().toISOString();
+    // 학생: 이름·학교·학년이 같은 학생이 이미 있으면 그 학생에 오답노트 정보만 붙임
+    let nNew = 0, nJoin = 0;
+    for (const s of M.odap.students || []) {
+      const school = schoolKey(s.school), grade = gradeKey(s.grade);
+      const hit = Object.entries(D.students || {}).find(([, x]) => String(x.name).trim() === String(s.name).trim() && schoolKey(x.school) === school && gradeKey(x.grade) === grade);
+      const odap = { id: s.id, books: (s.catalogIds || []).map(x => 'ob_' + x), records: s.records || [], sheets: s.sheets || [], at };
+      if (hit) { await ctx.saveStudentRaw(hit[0], { odap }); nJoin++; }
+      else {
+        const id = 'od_' + s.id, doc = { name: String(s.name).trim(), school, grade, cls: '', teacher: '원장', owner: 'ilmvm66@gmail.com', addedAt: at, editedAt: at, odap };
+        await ctx.saveStudentRaw(id, doc); D.students[id] = Object.assign({ id }, doc); nNew++;
+      }
+    }
+    // AI 대기열: 오답노트에서 읽어 와 '대기'로만 둔다 (자동 실행 없음)
+    logStep('people', 'AI 대기열 읽는 중');
+    const qs = await m.F.getDocs(m.F.collection(m.db, 'academies', M.odap.academyId, 'analysisQueue'));
+    const q = qs.docs.map(d => ({ id: 'oq_' + d.id, data: Object.assign(plain(d.data()), { origin: { app: 'odap', id: d.id }, auto: false, copiedAt: at }) }));
+    await ctx.migWrite('aiqueue', q, (a, n) => logStep('people', `AI 대기 ${a}/${n}`));
+    // AI 사용 기록 (오답노트) → meta
+    const usd = (M.odap.aiUsage || []).reduce((a, x) => a + (+x.usd || 0), 0);
+    if (ctx.saveMeta) await ctx.saveMeta('odapUsage', { days: M.odap.aiUsage || [], usd: Math.round(usd * 100) / 100, copiedAt: at });
+    return `학생 새로 ${nNew}명 · 기존 학생에 연결 ${nJoin}명 · AI 대기 ${q.length.toLocaleString()}건 · 오답노트 AI 사용 기록 $${usd.toFixed(2)}`;
+  }
+  async function stepCount() {
+    const c = async (col, f, v) => ctx.migCount(col, f, v);
+    const [ob, ns, it, aq] = await Promise.all([c('sources', 'origin.app', 'odap'), c('sources', 'origin.app', 'naesin'), c('items'), c('aiqueue')]);
+    const wantOb = (M.odap.catalogBooks || []).length, wantNs = M.naesin.exams.length + M.naesin.materials.length;
+    const wantIt = M.itemsWant || M.naesin.exams.reduce((a, e) => a + (e.analysis ? e.analysis.items.length : 0), 0) + M.naesin.materials.reduce((a, m) => a + (m.problems || []).filter(p => !p.skip).length, 0) + (M.odap.bankItems || []).length;
+    const okAll = ob === wantOb && ns === wantNs && it >= wantIt;
+    const line = `자료(오답노트) ${ob}/${wantOb} · 자료(내신분석) ${ns}/${wantNs} · 문항 ${it.toLocaleString()}/${wantIt.toLocaleString()} · AI 대기 ${aq.toLocaleString()}`;
+    if (!okAll) throw new Error('수가 맞지 않습니다 — ' + line);
+    return '모두 맞습니다 · ' + line;
+  }
+  const RUN = { nightly: stepNightly, backup: stepBackup, books: stepBooks, exams: stepExams, items: stepItems, people: stepPeople, count: stepCount };
+  async function runStep(k) {
+    const S = ST(); if (S.busy) return;
+    if (!M.odap || !M.naesin) { toast('먼저 위에서 두 앱을 읽어 주세요'); return; }
+    S.busy = k; S.log[k] = ''; render();
+    try { const msg = await RUN[k](); S.done[k] = { at: new Date().toISOString(), msg }; S.log[k] = ''; saveMig(); toast(msg); }
+    catch (e) { S.log[k] = '실패: ' + (e.message || e); S.busy = ''; render(); throw e; }
+    S.busy = ''; render();
+  }
+  async function runAll() { for (const [k] of STEPS) { try { await runStep(k); } catch (_) { toast('멈췄습니다. 실패한 단계를 확인해 주세요'); return; } } toast('옮기기를 모두 마쳤습니다'); }
+
+  return { render, analyze, matchFiles, matchStudents, _t: { M, RUN } };
 };
