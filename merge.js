@@ -138,7 +138,7 @@ window.SudoMerge = function (H) {
     else mods().catch(() => {});
     const R = M.rep;
     main.innerHTML = `
-      <div class="head"><div><div class="kicker">원장님만 · 읽기만 함 · 데이터는 바꾸지 않습니다</div><h1>통합 미리보기</h1></div>
+      <div class="head"><div><div class="kicker">원장님만 · 미리보기는 읽기만, 옮기기는 복사만 (기존 데이터는 지우지 않음)</div><h1>통합 미리보기</h1></div>
         <div class="headact">${R ? '<button type="button" class="btn ghost" id="mgRead">다시 읽기</button><button type="button" class="btn" id="mgDown">보고서 내려받기 (백업)</button>' : ''}</div></div>
       <p class="dl">내신분석 앱과 오답노트 앱을 합치기 전에, 두 앱에 무엇이 얼마나 있고 무엇이 겹치는지 보여 줍니다. 묶음은 제안일 뿐 저장하지 않습니다.</p>
       <section class="card mgsrc">
