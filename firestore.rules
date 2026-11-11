@@ -27,9 +27,15 @@ service cloud.firestore {
     // 시험 등록 실패 기록: 관리자 이상이 남기고, 원장님만 보고 지움
     match /regfails/{id} { allow read, delete: if isOwner(); allow create, update: if isAdmin(); }
     // 통합(수학도서관): 자료 · 문항 은행 · AI 대기 목록
-    match /sources/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
-    match /items/{id} { allow read: if isStaff(); allow write: if isAdmin(); }
-    match /aiqueue/{id} { allow read, write: if isAdmin(); }
+    // 선생님: 교재 단원(outline) 기록 · 오답노트 교재 문항 그림 저장 · 원장님 AI 대기 목록에 올리기만
+    match /sources/{id} { allow read: if isStaff(); allow write: if isAdmin();
+      allow update: if isTeacher() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['outline', 'retyped']); }
+    match /items/{id} { allow read: if isStaff(); allow write: if isAdmin();
+      allow create, update: if isTeacher() && request.resource.data.from == '교재'; }
+    match /aiqueue/{id} { allow read, write: if isAdmin();
+      allow create, update: if isTeacher() && request.resource.data.status == 'queued'; }
+    // 오답노트 시험 범위 (단원 묶음)
+    match /scopes/{id} { allow read, write: if isStaff(); }
 
     // 학생 · 시험 결과: 관리자 이상은 전체, 선생님은 자기가 등록한 학생만(owner)
     match /students/{id} {
