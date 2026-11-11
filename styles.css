@@ -753,3 +753,6 @@ body[data-mode="tab"] .mbgrid, body[data-mode="phone"] .mbgrid { grid-template-c
 .migrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface) }
 .migrow > div:first-child { min-width: 0; flex: 1 1 300px }
 .migact { display: flex; gap: 8px; align-items: center }
+
+/* 학생 찾기 칸: 세로 목록 안에서 220px로 늘어나지 않게 */
+.stlist .bigsearch { flex: 0 0 auto }
